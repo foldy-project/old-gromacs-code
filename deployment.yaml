@@ -35,6 +35,40 @@ subjects:
 - kind: ServiceAccount
   name: foldy-operator
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foldy-operator-redis
+spec:
+  selector:
+    app: foldy-operator-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foldy-operator-redis
+spec:
+  selector:
+    matchLabels:
+      app: foldy-operator-redis
+  template:
+    metadata:
+      labels:
+        app: foldy-operator-redis
+    spec:
+      containers:
+      - name: foldy-operator-redis
+        image: redis:latest
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        ports:
+        - containerPort: 6379
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -58,5 +92,9 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+        env:
+          - name: REDIS_URI
+            value: foldy-operator-redis:6379
         ports:
         - containerPort: 8090
+

@@ -20,6 +20,7 @@ require (
 	github.com/go-openapi/jsonreference v0.19.3 // indirect
 	github.com/go-openapi/spec v0.19.6 // indirect
 	github.com/go-openapi/swag v0.19.7 // indirect
+	github.com/go-redis/redis/v7 v7.2.0
 	github.com/google/pprof v0.0.0-20200220234727-d9cc46808a41 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/googleapis/gnostic v0.4.0 // indirect
@@ -38,7 +39,7 @@ require (
 	github.com/rogpeppe/go-charset v0.0.0-20190617161244-0dc95cdf6f31 // indirect
 	github.com/rogpeppe/go-internal v1.5.2 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/stretchr/testify v1.5.1 // indirect
+	github.com/stretchr/testify v1.5.1
 	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d // indirect
 	golang.org/x/exp v0.0.0-20200221183520-7c80518d1cc7 // indirect
 	golang.org/x/image v0.0.0-20200119044424-58c23975cae1 // indirect

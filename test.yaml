@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foldy-operator-test
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: foldy-operator-test
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: foldy-operator-test
+        imagePullPolicy: Always
+        image: thavlik/foldy-operator-test:latest
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        env:
+          - name: FOLDY_OPERATOR
+            value: foldy-operator:8090

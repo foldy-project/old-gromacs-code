@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v7"
 	"github.com/google/uuid"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,6 +30,10 @@ type server struct {
 	requests             map[string]chan<- interface{}
 	requestsL            sync.Mutex
 	timeout              time.Duration
+	handler              *http.ServeMux
+	redis                *redis.Client
+	exit                 chan<- error
+	maxUploadSize        int64
 }
 
 func homeDir() string {
@@ -193,6 +198,7 @@ func newServer() (*server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clientset: %v", err)
 	}
+	handler := http.NewServeMux()
 	//pod, err := clientset.CoreV1().Pods("default").Get(context.TODO(), "simulate-1aki-wn9x8", metav1.GetOptions{})
 	//if err != nil {
 	//	return nil, fmt.Errorf("pod: %v", err)
@@ -203,7 +209,28 @@ func newServer() (*server, error) {
 	//	return nil, fmt.Errorf("pods: %v", err)
 	//}
 	//log.Printf("%#v", pods)
-	return &server{
+
+	var redisURI string
+	var ok bool
+	if redisURI, ok = os.LookupEnv("REDIS_URI"); !ok {
+		redisURI = "localhost:6379"
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     redisURI,
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+	if _, err := client.Ping().Result(); err != nil {
+		return nil, fmt.Errorf("redis: %v", err)
+	}
+
+	pubsub := client.Subscribe("foldy")
+	// Wait for confirmation that subscription is created before publishing anything.
+	if _, err := pubsub.Receive(); err != nil {
+		return nil, fmt.Errorf("pubsub: %v", err)
+	}
+	exit := make(chan error, 1)
+	s := &server{
 		namespace:            "default",
 		image:                "thavlik/foldy:latest",
 		prefix:               "foldy-sim",
@@ -211,7 +238,52 @@ func newServer() (*server, error) {
 		clientset:            clientset,
 		requests:             make(map[string]chan<- interface{}),
 		timeout:              time.Minute * 15,
-	}, nil
+		handler:              handler,
+		redis:                client,
+		exit:                 exit,
+		maxUploadSize:        1024 * 1024 * 512, // 512Mi
+	}
+	go s.listenForPubSub(pubsub.Channel(), exit)
+	s.buildRoutes()
+	return s, nil
+}
+
+func (s *server) listenForPubSub(ch <-chan *redis.Message, exit <-chan error) {
+	for {
+		select {
+		case <-exit:
+			return
+		case msg := <-ch:
+			if msg.Channel == "foldy" {
+				correlationID := msg.Payload
+				s.requestsL.Lock()
+				req, ok := s.requests[correlationID]
+				if !ok {
+					s.requestsL.Unlock()
+					continue
+				}
+				delete(s.requests, correlationID)
+				s.requestsL.Unlock()
+				key := rkResult(correlationID)
+				p := s.redis.Pipeline()
+				getCmd := p.Get(key)
+				p.Del(key)
+				if _, err := p.Exec(); err != nil {
+					log.Printf("Error retrieving result: %v", err)
+					req <- fmt.Errorf("redis: %v", err)
+					close(req)
+					continue
+				}
+				data, _ := getCmd.Result()
+				req <- []byte(data)
+				close(req)
+			}
+		}
+	}
+}
+
+func rkResult(correlationID string) string {
+	return fmt.Sprintf("r:%s:i", correlationID)
 }
 
 func getPDBIDFromRequest(r *http.Request) (string, error) {
@@ -238,34 +310,44 @@ func getCorrelationIDFromRequest(r *http.Request) (string, error) {
 	return correlationIDs[0], nil
 }
 
-func (s *server) listen() {
-	http.HandleFunc("/complete", func(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleComplete() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if err := func() error {
 			correlationID, err := getCorrelationIDFromRequest(r)
 			if err != nil {
 				return err
 			}
 			log.Printf("Received completion request, correlationID=%s", correlationID)
-			data, err := ioutil.ReadAll(r.Body)
+			if err := r.ParseMultipartForm(s.maxUploadSize); err != nil {
+				return fmt.Errorf("multipart form: %v", err)
+			}
+			file, _, err := r.FormFile("data")
 			if err != nil {
-				return fmt.Errorf("body: %v", err)
+				return fmt.Errorf("form file: %v", err)
 			}
-			s.requestsL.Lock()
-			ch, ok := s.requests[correlationID]
-			if !ok {
-				return fmt.Errorf("channel %s not found", correlationID)
+			data, err := ioutil.ReadAll(file)
+			if err != nil {
+				return fmt.Errorf("failed to read file: %v", err)
 			}
-			delete(s.requests, correlationID)
-			s.requestsL.Unlock()
-			ch <- data
-			close(ch)
+			defer file.Close()
+			p := s.redis.Pipeline()
+			// Cache the result in redis
+			p.Set(rkResult(correlationID), data, time.Minute*15)
+			// Inform cluster of success
+			p.Publish("foldy", correlationID)
+			if _, err := p.Exec(); err != nil {
+				return fmt.Errorf("redis: %v", err)
+			}
 			log.Printf("%s fulfilled", correlationID)
 			return nil
 		}(); err != nil {
 			log.Printf("handler: %v", err)
 		}
-	})
-	http.HandleFunc("/run", func(w http.ResponseWriter, r *http.Request) {
+	}
+}
+
+func (s *server) handleRun() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if err := func() error {
 			pdbID, err := getPDBIDFromRequest(r)
 			if err != nil {
@@ -276,16 +358,27 @@ func (s *server) listen() {
 			if err != nil {
 				return fmt.Errorf("failed to run experiment: %v", err)
 			}
-			w.Header().Set("Content-Type", "application/x-tar")
+			filename := fmt.Sprintf("%s_minim.tar.gz", pdbID)
+			w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+			w.Header().Set("Content-Type", "application/gzip")
 			w.Write(body)
 			return nil
 		}(); err != nil {
 			log.Printf("handler: %v", err)
 		}
-	})
+	}
+}
+
+func (s *server) buildRoutes() {
+	s.handler.HandleFunc("/complete", s.handleComplete())
+	s.handler.HandleFunc("/run", s.handleRun())
+}
+
+func (s *server) listen() {
 	go func() {
 		log.Printf("Listening on 8090")
-		if err := http.ListenAndServe(":8090", nil); err != nil {
+		if err := http.ListenAndServe(":8090", s.handler); err != nil {
 			panic(fmt.Sprintf("ListenAndServe: %v", err))
 		}
 	}()
