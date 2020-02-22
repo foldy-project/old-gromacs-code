@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	v1 "k8s.io/api/core/v1"
@@ -27,6 +28,7 @@ type server struct {
 	foldyOperatorAddress string
 	requests             map[string]chan<- interface{}
 	requestsL            sync.Mutex
+	timeout              time.Duration
 }
 
 func homeDir() string {
@@ -103,19 +105,73 @@ func (s *server) runExperiment(pdbID string) ([]byte, error) {
 	); err != nil {
 		return nil, fmt.Errorf("create pod: %v", err)
 	}
+	defer func() {
+		// Clean up pod at the end
+		if err := s.clientset.CoreV1().Pods(s.namespace).Delete(
+			context.TODO(),
+			pod.Name,
+			&metav1.DeleteOptions{},
+		); err != nil {
+			log.Printf("Warning: failed to delete pod: %v", err)
+		}
+		log.Printf("Deleted pod %s", pod.Name)
+	}()
 	log.Printf("Pod created.")
 	ch := make(chan interface{}, 1)
+	problem := make(chan error, 1)
+	stop := make(chan int, 1)
+	defer func() {
+		stop <- 0
+		close(stop)
+	}()
+	go func() {
+		defer close(problem)
+		probeInterval := time.Second * 3
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(probeInterval):
+				// Get the pod status
+				info, err := s.clientset.CoreV1().Pods(s.namespace).Get(
+					context.TODO(),
+					pod.Name,
+					metav1.GetOptions{},
+				)
+				if err != nil {
+					problem <- fmt.Errorf("encountered error while creating pod: %v", err)
+					return
+				}
+				log.Printf("Pod phase: %v", info.Status.Phase)
+				switch info.Status.Phase {
+				case "Pending":
+					continue
+				case "Running":
+					continue
+				default:
+					problem <- fmt.Errorf("encountered unexpected phase '%s'", info.Status.Phase)
+					return
+				}
+			}
+		}
+	}()
 	s.requestsL.Lock()
 	s.requests[correlationID] = ch
 	s.requestsL.Unlock()
-	result := <-ch
-	if err, ok := result.(error); ok && err != nil {
-		return nil, fmt.Errorf("rpc: %v", err)
+	select {
+	case err := <-problem:
+		return nil, fmt.Errorf("pod: %v", err)
+	case result := <-ch:
+		if err, ok := result.(error); ok && err != nil {
+			return nil, fmt.Errorf("rpc: %v", err)
+		}
+		if body, ok := result.([]byte); ok {
+			return body, nil
+		}
+		return nil, fmt.Errorf("malformed response from channel %T(%v)", result, result)
+	case <-time.After(s.timeout):
+		return nil, fmt.Errorf("timed out after %v", s.timeout)
 	}
-	if body, ok := result.([]byte); ok {
-		return body, nil
-	}
-	return nil, fmt.Errorf("malformed response from channel %T(%v)", result, result)
 }
 
 func newServer() (*server, error) {
@@ -154,6 +210,7 @@ func newServer() (*server, error) {
 		foldyOperatorAddress: "foldy-operator:8090",
 		clientset:            clientset,
 		requests:             make(map[string]chan<- interface{}),
+		timeout:              time.Minute * 15,
 	}, nil
 }
 
