@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+cd $(dirname "$0")
+image=thavlik/foldy-operator-test
+tag=latest
+kubectl delete job foldy-operator-test || true
+cd test
+docker build -t $image:$tag .
+docker push $image:$tag
+kubectl apply -f test.yaml
+watch "kubectl get pod"
+

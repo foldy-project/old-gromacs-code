@@ -90,8 +90,8 @@ spec:
         imagePullPolicy: Always
         resources:
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "384Mi"
+            cpu: "250m"
         env:
           - name: REDIS_URI
             value: foldy-operator-redis:6379

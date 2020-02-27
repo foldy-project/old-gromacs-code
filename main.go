@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -20,6 +21,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
+
+// RunConfig ...
+type RunConfig struct {
+	PDBID string `json:"pdb_id"`
+	Steps int    `json:"steps"`
+}
 
 type server struct {
 	image                string
@@ -43,11 +50,14 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
-func (s *server) createExperimentPodObject(pdbID string, correlationID string) (*v1.Pod, error) {
+func (s *server) createExperimentPodObject(config *RunConfig, correlationID string) (*v1.Pod, error) {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s-%s", s.prefix, pdbID, correlationID[:4]),
+			Name:      fmt.Sprintf("%s-%s-%s", s.prefix, config.PDBID, correlationID[:8]),
 			Namespace: s.namespace,
+			Labels: map[string]string{
+				"app": fmt.Sprintf("%s-%s", s.prefix, config.PDBID),
+			},
 		},
 		Spec: v1.PodSpec{
 			RestartPolicy: v1.RestartPolicyNever,
@@ -67,9 +77,14 @@ func (s *server) createExperimentPodObject(pdbID string, correlationID string) (
 					Name:            "simulation",
 					Image:           s.image,
 					Command: []string{
-						"./entrypoint.sh",
-						pdbID,
+						"python3",
+						"./simulate.py",
+						"--pdb_id",
+						config.PDBID,
+						"--correlation_id",
 						correlationID,
+						"--steps",
+						fmt.Sprintf("%d", config.Steps),
 					},
 					VolumeMounts: []v1.VolumeMount{
 						v1.VolumeMount{
@@ -79,8 +94,8 @@ func (s *server) createExperimentPodObject(pdbID string, correlationID string) (
 					},
 					Resources: v1.ResourceRequirements{
 						Limits: map[v1.ResourceName]resource.Quantity{
-							"cpu":    resource.MustParse("2000m"),
-							"memory": resource.MustParse("4Gi"),
+							"cpu":    resource.MustParse("1000m"),
+							"memory": resource.MustParse("2Gi"),
 						},
 					},
 					Env: []v1.EnvVar{
@@ -95,10 +110,10 @@ func (s *server) createExperimentPodObject(pdbID string, correlationID string) (
 	}, nil
 }
 
-func (s *server) runExperiment(pdbID string) ([]byte, error) {
+func (s *server) runExperiment(config *RunConfig) ([]byte, error) {
 	correlationID := uuid.New().String()
-	log.Printf("Running experiment %s, correlationID=%s", pdbID, correlationID)
-	pod, err := s.createExperimentPodObject(pdbID, correlationID)
+	log.Printf("Running experiment %s, correlationID=%s", config.PDBID, correlationID)
+	pod, err := s.createExperimentPodObject(config, correlationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pod: %v", err)
 	}
@@ -110,19 +125,19 @@ func (s *server) runExperiment(pdbID string) ([]byte, error) {
 	); err != nil {
 		return nil, fmt.Errorf("create pod: %v", err)
 	}
-	defer func() {
-		// Clean up pod at the end
-		if err := s.clientset.CoreV1().Pods(s.namespace).Delete(
-			context.TODO(),
-			pod.Name,
-			&metav1.DeleteOptions{},
-		); err != nil {
-			log.Printf("Warning: failed to delete pod: %v", err)
-		}
-		log.Printf("Deleted pod %s", pod.Name)
-	}()
+	//defer func() {
+	//	// Clean up pod at the end
+	//	if err := s.clientset.CoreV1().Pods(s.namespace).Delete(
+	//		context.TODO(),
+	//		pod.Name,
+	//		&metav1.DeleteOptions{},
+	//	); err != nil {
+	//		log.Printf("Warning: failed to delete pod: %v", err)
+	//	}
+	//	log.Printf("Deleted pod %s", pod.Name)
+	//}()
 	log.Printf("Pod created.")
-	ch := make(chan interface{}, 1)
+	req := make(chan interface{}, 1)
 	problem := make(chan error, 1)
 	stop := make(chan int, 1)
 	defer func() {
@@ -153,6 +168,8 @@ func (s *server) runExperiment(pdbID string) ([]byte, error) {
 					continue
 				case "Running":
 					continue
+				case "Succeeded":
+					panic("unreachable brach detected")
 				default:
 					problem <- fmt.Errorf("encountered unexpected phase '%s'", info.Status.Phase)
 					return
@@ -161,14 +178,14 @@ func (s *server) runExperiment(pdbID string) ([]byte, error) {
 		}
 	}()
 	s.requestsL.Lock()
-	s.requests[correlationID] = ch
+	s.requests[correlationID] = req
 	s.requestsL.Unlock()
 	select {
 	case err := <-problem:
-		return nil, fmt.Errorf("pod: %v", err)
-	case result := <-ch:
+		return nil, err
+	case result := <-req:
 		if err, ok := result.(error); ok && err != nil {
-			return nil, fmt.Errorf("rpc: %v", err)
+			return nil, err
 		}
 		if body, ok := result.([]byte); ok {
 			return body, nil
@@ -199,16 +216,6 @@ func newServer() (*server, error) {
 		return nil, fmt.Errorf("clientset: %v", err)
 	}
 	handler := http.NewServeMux()
-	//pod, err := clientset.CoreV1().Pods("default").Get(context.TODO(), "simulate-1aki-wn9x8", metav1.GetOptions{})
-	//if err != nil {
-	//	return nil, fmt.Errorf("pod: %v", err)
-	//}
-	//log.Printf("%#v", pod)
-	//pods, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{})
-	//if err != nil {
-	//	return nil, fmt.Errorf("pods: %v", err)
-	//}
-	//log.Printf("%#v", pods)
 
 	var redisURI string
 	var ok bool
@@ -248,7 +255,10 @@ func newServer() (*server, error) {
 	return s, nil
 }
 
-func (s *server) listenForPubSub(ch <-chan *redis.Message, exit <-chan error) {
+func (s *server) listenForPubSub(
+	ch <-chan *redis.Message,
+	exit <-chan error,
+) {
 	for {
 		select {
 		case <-exit:
@@ -277,6 +287,7 @@ func (s *server) listenForPubSub(ch <-chan *redis.Message, exit <-chan error) {
 				data, _ := getCmd.Result()
 				req <- []byte(data)
 				close(req)
+				log.Printf("%s fulfilled locally", correlationID)
 			}
 		}
 	}
@@ -310,6 +321,33 @@ func getCorrelationIDFromRequest(r *http.Request) (string, error) {
 	return correlationIDs[0], nil
 }
 
+var errRequestNotFound = fmt.Errorf("request not found")
+
+func (s *server) fullfillLocal(correlationID string, data []byte) error {
+	s.requestsL.Lock()
+	defer s.requestsL.Unlock()
+	req, ok := s.requests[correlationID]
+	if !ok {
+		return errRequestNotFound
+	}
+	delete(s.requests, correlationID)
+	req <- data
+	close(req)
+	return nil
+}
+
+func (s *server) fullfillRemote(correlationID string, data []byte) error {
+	p := s.redis.Pipeline()
+	// Cache the result in redis
+	p.Set(rkResult(correlationID), data, time.Minute*15)
+	// Inform cluster of success
+	p.Publish("foldy", correlationID)
+	if _, err := p.Exec(); err != nil {
+		return fmt.Errorf("redis: %v", err)
+	}
+	return nil
+}
+
 func (s *server) handleComplete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := func() error {
@@ -325,23 +363,25 @@ func (s *server) handleComplete() http.HandlerFunc {
 			if err != nil {
 				return fmt.Errorf("form file: %v", err)
 			}
+			defer file.Close()
 			data, err := ioutil.ReadAll(file)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %v", err)
 			}
-			defer file.Close()
-			p := s.redis.Pipeline()
-			// Cache the result in redis
-			p.Set(rkResult(correlationID), data, time.Minute*15)
-			// Inform cluster of success
-			p.Publish("foldy", correlationID)
-			if _, err := p.Exec(); err != nil {
-				return fmt.Errorf("redis: %v", err)
+			if err := s.fullfillLocal(correlationID, data); err == errRequestNotFound {
+				if err := s.fullfillRemote(correlationID, data); err != nil {
+					return fmt.Errorf("fulfillRemote: %v", err)
+				}
+				log.Printf("%s fulfilled remotely", correlationID)
+			} else if err != nil {
+				return fmt.Errorf("fulfillLocal: %v", err)
+			} else {
+				log.Printf("%s fulfilled locally", correlationID)
 			}
-			log.Printf("%s fulfilled", correlationID)
 			return nil
 		}(); err != nil {
-			log.Printf("handler: %v", err)
+			log.Printf("%v: %v", r.RequestURI, err)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}
 }
@@ -349,23 +389,69 @@ func (s *server) handleComplete() http.HandlerFunc {
 func (s *server) handleRun() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := func() error {
-			pdbID, err := getPDBIDFromRequest(r)
+			body, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				return fmt.Errorf("body: %v", err)
+			}
+			log.Printf("body=%s", string(body))
+			config := &RunConfig{}
+			if err := json.Unmarshal(body, config); err != nil {
+				return fmt.Errorf("unmarshal: %v", err)
+			}
+			log.Printf("Received run request, pdb=%s", config.PDBID)
+			body, err = s.runExperiment(config)
 			if err != nil {
 				return err
 			}
-			log.Printf("Received run request, pdb=%s", pdbID)
-			body, err := s.runExperiment(pdbID)
-			if err != nil {
-				return fmt.Errorf("failed to run experiment: %v", err)
-			}
-			filename := fmt.Sprintf("%s_minim.tar.gz", pdbID)
+			filename := fmt.Sprintf("%s_minim.tar.gz", config.PDBID)
 			w.Header().Set("Content-Disposition", "attachment; filename="+filename)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
 			w.Header().Set("Content-Type", "application/gzip")
 			w.Write(body)
 			return nil
 		}(); err != nil {
-			log.Printf("handler: %v", err)
+			log.Printf("%v: %v", r.RequestURI, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+		}
+	}
+}
+
+func (s *server) handleError() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := func() error {
+			body, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				return fmt.Errorf("read body: %v", err)
+			}
+			doc := make(map[string]interface{})
+			if err := json.Unmarshal(body, &doc); err != nil {
+				return fmt.Errorf("json: %v", err)
+			}
+			msg, ok := doc["msg"].(string)
+			if !ok {
+				return fmt.Errorf("missing msg")
+			}
+			correlationID, ok := doc["correlation_id"].(string)
+			if !ok {
+				return fmt.Errorf("missing correlationID")
+			}
+			log.Printf("/error %s", msg)
+			s.requestsL.Lock()
+			req, ok := s.requests[correlationID]
+			if !ok {
+				s.requestsL.Unlock()
+				return errRequestNotFound
+			}
+			delete(s.requests, correlationID)
+			s.requestsL.Unlock()
+			req <- fmt.Errorf(msg)
+			close(req)
+			return nil
+		}(); err != nil {
+			log.Printf("%v: %v", r.RequestURI, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
 		}
 	}
 }
@@ -373,6 +459,7 @@ func (s *server) handleRun() http.HandlerFunc {
 func (s *server) buildRoutes() {
 	s.handler.HandleFunc("/complete", s.handleComplete())
 	s.handler.HandleFunc("/run", s.handleRun())
+	s.handler.HandleFunc("/error", s.handleError())
 }
 
 func (s *server) listen() {

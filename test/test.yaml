@@ -17,7 +17,7 @@ spec:
         resources:
           limits:
             memory: "512Mi"
-            cpu: "250m"
+            cpu: "500m"
         env:
           - name: FOLDY_OPERATOR
             value: foldy-operator:8090
