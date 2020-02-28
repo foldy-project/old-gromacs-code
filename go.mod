@@ -7,6 +7,7 @@ require (
 	cloud.google.com/go/datastore v1.1.0 // indirect
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20191203043605-d42048ed14fd // indirect
 	github.com/Azure/go-autorest/autorest v0.9.6 // indirect
+	github.com/Jeffail/tunny v0.0.0-20190930221602-f13eb662a36a
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/cncf/udpa/go v0.0.0-20200124205748-db4b343e48c1 // indirect
 	github.com/docker/spdystream v0.0.0-20181023171402-6480d4af844c // indirect

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,7 @@ type server struct {
 	redis                *redis.Client
 	exit                 chan<- error
 	maxUploadSize        int64
+	pruneResultTimeout   time.Duration
 }
 
 func homeDir() string {
@@ -83,7 +85,7 @@ func (s *server) createExperimentPodObject(config *RunConfig, correlationID stri
 						config.PDBID,
 						"--correlation_id",
 						correlationID,
-						"--steps",
+						"--nsteps",
 						fmt.Sprintf("%d", config.Steps),
 					},
 					VolumeMounts: []v1.VolumeMount{
@@ -125,64 +127,64 @@ func (s *server) runExperiment(config *RunConfig) ([]byte, error) {
 	); err != nil {
 		return nil, fmt.Errorf("create pod: %v", err)
 	}
-	//defer func() {
-	//	// Clean up pod at the end
-	//	if err := s.clientset.CoreV1().Pods(s.namespace).Delete(
-	//		context.TODO(),
-	//		pod.Name,
-	//		&metav1.DeleteOptions{},
-	//	); err != nil {
-	//		log.Printf("Warning: failed to delete pod: %v", err)
-	//	}
-	//	log.Printf("Deleted pod %s", pod.Name)
-	//}()
+	defer func() {
+		// Clean up pod at the end
+		if err := s.clientset.CoreV1().Pods(s.namespace).Delete(
+			context.TODO(),
+			pod.Name,
+			&metav1.DeleteOptions{},
+		); err != nil {
+			log.Printf("Warning: failed to delete pod: %v", err)
+		}
+		log.Printf("Deleted pod %s", pod.Name)
+	}()
 	log.Printf("Pod created.")
 	req := make(chan interface{}, 1)
-	problem := make(chan error, 1)
-	stop := make(chan int, 1)
-	defer func() {
-		stop <- 0
-		close(stop)
-	}()
-	go func() {
-		defer close(problem)
-		probeInterval := time.Second * 3
-		for {
-			select {
-			case <-stop:
-				return
-			case <-time.After(probeInterval):
-				// Get the pod status
-				info, err := s.clientset.CoreV1().Pods(s.namespace).Get(
-					context.TODO(),
-					pod.Name,
-					metav1.GetOptions{},
-				)
-				if err != nil {
-					problem <- fmt.Errorf("encountered error while creating pod: %v", err)
-					return
-				}
-				log.Printf("Pod phase: %v", info.Status.Phase)
-				switch info.Status.Phase {
-				case "Pending":
-					continue
-				case "Running":
-					continue
-				case "Succeeded":
-					panic("unreachable brach detected")
-				default:
-					problem <- fmt.Errorf("encountered unexpected phase '%s'", info.Status.Phase)
-					return
-				}
-			}
-		}
-	}()
+	//problem := make(chan error, 1)
+	//stop := make(chan int, 1)
+	//defer func() {
+	//	stop <- 0
+	//	close(stop)
+	//}()
+	//go func() {
+	//	defer close(problem)
+	//	probeInterval := time.Second * 3
+	//	for {
+	//		select {
+	//		case <-stop:
+	//			return
+	//		case <-time.After(probeInterval):
+	//			// Get the pod status
+	//			info, err := s.clientset.CoreV1().Pods(s.namespace).Get(
+	//				context.TODO(),
+	//				pod.Name,
+	//				metav1.GetOptions{},
+	//			)
+	//			if err != nil {
+	//				problem <- fmt.Errorf("encountered error while creating pod: %v", err)
+	//				return
+	//			}
+	//			log.Printf("Pod phase: %v", info.Status.Phase)
+	//			switch info.Status.Phase {
+	//			case "Pending":
+	//				continue
+	//			case "Running":
+	//				continue
+	//			case "Succeeded":
+	//				continue
+	//			default:
+	//				problem <- fmt.Errorf("encountered unexpected phase '%s'", info.Status.Phase)
+	//				return
+	//			}
+	//		}
+	//	}
+	//}()
 	s.requestsL.Lock()
 	s.requests[correlationID] = req
 	s.requestsL.Unlock()
 	select {
-	case err := <-problem:
-		return nil, err
+	//case err := <-problem:
+	//	return nil, err
 	case result := <-req:
 		if err, ok := result.(error); ok && err != nil {
 			return nil, err
@@ -249,10 +251,49 @@ func newServer() (*server, error) {
 		redis:                client,
 		exit:                 exit,
 		maxUploadSize:        1024 * 1024 * 512, // 512Mi
+		pruneResultTimeout:   15 * time.Minute,
 	}
 	go s.listenForPubSub(pubsub.Channel(), exit)
 	s.buildRoutes()
 	return s, nil
+}
+
+func (s *server) handleBroadcastPayload(correlationID string) error {
+	s.requestsL.Lock()
+	req, ok := s.requests[correlationID]
+	if !ok {
+		s.requestsL.Unlock()
+		return errRequestNotFound
+	}
+	delete(s.requests, correlationID)
+	s.requestsL.Unlock()
+	defer close(req)
+
+	key := rkResult(correlationID)
+	p := s.redis.Pipeline()
+	getCmd := p.Get(key)
+	p.Del(key)
+	if _, err := p.Exec(); err != nil {
+		log.Printf("Error retrieving result: %v", err)
+		req <- fmt.Errorf("redis: %v", err)
+		return fmt.Errorf("redis: %v", err)
+	}
+	data, _ := getCmd.Result()
+	payload := &BroadcastPayload{}
+	if err := json.Unmarshal(
+		[]byte(data),
+		payload,
+	); err != nil {
+		return fmt.Errorf("unmarshal: %v", err)
+	}
+	if payload.Success {
+		req <- []byte(payload.Data)
+		log.Printf("%s fulfilled from remote", correlationID)
+	} else {
+		req <- fmt.Errorf(payload.ErrorMsg)
+		log.Printf("%s remote error: %v", correlationID, payload.ErrorMsg)
+	}
+	return nil
 }
 
 func (s *server) listenForPubSub(
@@ -265,29 +306,11 @@ func (s *server) listenForPubSub(
 			return
 		case msg := <-ch:
 			if msg.Channel == "foldy" {
-				correlationID := msg.Payload
-				s.requestsL.Lock()
-				req, ok := s.requests[correlationID]
-				if !ok {
-					s.requestsL.Unlock()
-					continue
+				if err := s.handleBroadcastPayload(
+					msg.Payload,
+				); err != nil && err != errRequestNotFound {
+					log.Printf("error handling broadcast payloade: %v", err)
 				}
-				delete(s.requests, correlationID)
-				s.requestsL.Unlock()
-				key := rkResult(correlationID)
-				p := s.redis.Pipeline()
-				getCmd := p.Get(key)
-				p.Del(key)
-				if _, err := p.Exec(); err != nil {
-					log.Printf("Error retrieving result: %v", err)
-					req <- fmt.Errorf("redis: %v", err)
-					close(req)
-					continue
-				}
-				data, _ := getCmd.Result()
-				req <- []byte(data)
-				close(req)
-				log.Printf("%s fulfilled locally", correlationID)
 			}
 		}
 	}
@@ -323,7 +346,7 @@ func getCorrelationIDFromRequest(r *http.Request) (string, error) {
 
 var errRequestNotFound = fmt.Errorf("request not found")
 
-func (s *server) fullfillLocal(correlationID string, data []byte) error {
+func (s *server) fullfillLocalSuccess(correlationID string, data []byte) error {
 	s.requestsL.Lock()
 	defer s.requestsL.Unlock()
 	req, ok := s.requests[correlationID]
@@ -336,11 +359,39 @@ func (s *server) fullfillLocal(correlationID string, data []byte) error {
 	return nil
 }
 
-func (s *server) fullfillRemote(correlationID string, data []byte) error {
+// BroadcastPayload ...
+type BroadcastPayload struct {
+	Data     []byte `json:"data"`
+	Success  bool   `json:"success"`
+	ErrorMsg string `json:"error_msg"`
+}
+
+func (s *server) fullfillRemoteError(correlationID string, errorMsg string) error {
 	p := s.redis.Pipeline()
-	// Cache the result in redis
-	p.Set(rkResult(correlationID), data, time.Minute*15)
-	// Inform cluster of success
+	body, err := json.Marshal(&BroadcastPayload{
+		ErrorMsg: errorMsg,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal: %v", err)
+	}
+	p.Set(rkResult(correlationID), body, s.pruneResultTimeout)
+	p.Publish("foldy", correlationID)
+	if _, err := p.Exec(); err != nil {
+		return fmt.Errorf("redis: %v", err)
+	}
+	return nil
+}
+
+func (s *server) fullfillRemoteSuccess(correlationID string, data []byte) error {
+	p := s.redis.Pipeline()
+	body, err := json.Marshal(&BroadcastPayload{
+		Data:    data,
+		Success: true,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal: %v", err)
+	}
+	p.Set(rkResult(correlationID), body, s.pruneResultTimeout)
 	p.Publish("foldy", correlationID)
 	if _, err := p.Exec(); err != nil {
 		return fmt.Errorf("redis: %v", err)
@@ -368,8 +419,8 @@ func (s *server) handleComplete() http.HandlerFunc {
 			if err != nil {
 				return fmt.Errorf("failed to read file: %v", err)
 			}
-			if err := s.fullfillLocal(correlationID, data); err == errRequestNotFound {
-				if err := s.fullfillRemote(correlationID, data); err != nil {
+			if err := s.fullfillLocalSuccess(correlationID, data); err == errRequestNotFound {
+				if err := s.fullfillRemoteSuccess(correlationID, data); err != nil {
 					return fmt.Errorf("fulfillRemote: %v", err)
 				}
 				log.Printf("%s fulfilled remotely", correlationID)
@@ -388,15 +439,24 @@ func (s *server) handleComplete() http.HandlerFunc {
 
 func (s *server) handleRun() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		statusCode := http.StatusInternalServerError
 		if err := func() error {
 			body, err := ioutil.ReadAll(r.Body)
 			if err != nil {
+				statusCode = http.StatusBadRequest
 				return fmt.Errorf("body: %v", err)
 			}
-			log.Printf("body=%s", string(body))
 			config := &RunConfig{}
 			if err := json.Unmarshal(body, config); err != nil {
+				statusCode = http.StatusBadRequest
 				return fmt.Errorf("unmarshal: %v", err)
+			}
+			// Normalize ID as lowercase
+			config.PDBID = strings.ToLower(config.PDBID)
+			if config.Steps < 2 {
+				// Run a simulation for less than two steps?
+				statusCode = http.StatusBadRequest
+				return fmt.Errorf("expected >1 steps, got %d", config.Steps)
 			}
 			log.Printf("Received run request, pdb=%s", config.PDBID)
 			body, err = s.runExperiment(config)
@@ -411,7 +471,7 @@ func (s *server) handleRun() http.HandlerFunc {
 			return nil
 		}(); err != nil {
 			log.Printf("%v: %v", r.RequestURI, err)
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(statusCode)
 			w.Write([]byte(err.Error()))
 		}
 	}
@@ -441,7 +501,13 @@ func (s *server) handleError() http.HandlerFunc {
 			req, ok := s.requests[correlationID]
 			if !ok {
 				s.requestsL.Unlock()
-				return errRequestNotFound
+				if err := s.fullfillRemoteError(
+					correlationID,
+					msg,
+				); err != nil {
+					return fmt.Errorf("fulfillRemote: %v", err)
+				}
+				return nil
 			}
 			delete(s.requests, correlationID)
 			s.requestsL.Unlock()

@@ -21,3 +21,8 @@ spec:
         env:
           - name: FOLDY_OPERATOR
             value: foldy-operator:8090
+          - name: TIMEOUT
+            value: 240s
+          - name: CONCURRENCY
+            value: '5'
+            

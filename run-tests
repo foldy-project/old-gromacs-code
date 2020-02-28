@@ -8,5 +8,5 @@ cd test
 docker build -t $image:$tag .
 docker push $image:$tag
 kubectl apply -f test.yaml
-watch "kubectl get pod"
+watch -n 5 "kubectl get pod"
 
