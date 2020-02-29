@@ -30,14 +30,14 @@ func TestErrBrokenPDB(t *testing.T) {
 	})
 	url := fmt.Sprintf("http://%s/run", foldyOperator)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
-	require.Nil(t, err)
+	require.NoError(t, err)
 	cl := http.Client{Timeout: time.Minute * 3}
 	resp, err := cl.Do(req)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, 500, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	// GROMACS error message output
 	require.True(t, strings.Contains(string(body), "Trying to deduce atomnumbers when no pdb information is present"))
 }
@@ -52,14 +52,14 @@ func TestErrPDBNotFound(t *testing.T) {
 	})
 	url := fmt.Sprintf("http://%s/run", foldyOperator)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
-	require.Nil(t, err)
+	require.NoError(t, err)
 	cl := http.Client{Timeout: time.Minute * 3}
 	resp, err := cl.Do(req)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, 500, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("pdb '%s' not found", pdbID), string(body))
 }
 
@@ -88,13 +88,13 @@ func TestErrZeroSteps(t *testing.T) {
 	})
 	url := fmt.Sprintf("http://%s/run", foldyOperator)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
-	require.Nil(t, err)
+	require.NoError(t, err)
 	cl := http.Client{Timeout: time.Minute * 3}
 	resp, err := cl.Do(req)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Equal(t, "expected >1 steps, got 0", string(body))
 }
@@ -112,38 +112,41 @@ func TestBasicMinim(t *testing.T) {
 	if !ok {
 		pdbID = "1aki"
 	}
-	steps := 10
-	config, _ := json.Marshal(map[string]interface{}{
-		"pdb_id": pdbID,
-		"steps":  steps,
+	pdbID = strings.ToLower(pdbID)
+	t.Run(pdbID, func(t *testing.T) {
+		steps := 10
+		config, _ := json.Marshal(map[string]interface{}{
+			"pdb_id": pdbID,
+			"steps":  steps,
+		})
+		url := fmt.Sprintf("http://%s/run", foldyOperator)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(config))
+		require.NoError(t, err)
+		cl := http.Client{Timeout: time.Minute * 3}
+		resp, err := cl.Do(req)
+		require.NoError(t, err)
+		if resp.StatusCode != 200 {
+			msg, _ := ioutil.ReadAll(resp.Body)
+			log.Printf("%v", string(msg))
+		}
+		require.Equal(t, resp.StatusCode, 200)
+		defer resp.Body.Close()
+		f, err := ioutil.TempFile("/tmp", "result-*.tar.gz")
+		require.NoError(t, err)
+		defer func() {
+			require.Nil(t, os.Remove(f.Name()))
+		}()
+		_, err = io.Copy(f, resp.Body)
+		require.NoError(t, err)
+		require.Nil(t, f.Close())
+		info, err := os.Stat(f.Name())
+		require.NoError(t, err)
+		require.Greater(t, info.Size(), int64(0))
+		untar(t, f.Name())
+		files, err := listFiles(fmt.Sprintf("%s_minim/", pdbID))
+		require.NoError(t, err)
+		require.Equal(t, len(files), steps)
 	})
-	url := fmt.Sprintf("http://%s/run", foldyOperator)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
-	require.Nil(t, err)
-	cl := http.Client{Timeout: time.Minute * 3}
-	resp, err := cl.Do(req)
-	require.Nil(t, err)
-	if resp.StatusCode != 200 {
-		msg, _ := ioutil.ReadAll(resp.Body)
-		log.Printf("%v", string(msg))
-	}
-	require.Equal(t, resp.StatusCode, 200)
-	defer resp.Body.Close()
-	f, err := ioutil.TempFile("/tmp", "result-*.tar.gz")
-	require.Nil(t, err)
-	defer func() {
-		require.Nil(t, os.Remove(f.Name()))
-	}()
-	_, err = io.Copy(f, resp.Body)
-	require.Nil(t, err)
-	require.Nil(t, f.Close())
-	info, err := os.Stat(f.Name())
-	require.Nil(t, err)
-	require.Greater(t, info.Size(), int64(0))
-	untar(t, f.Name())
-	files, err := listFiles(fmt.Sprintf("%s_minim/", pdbID))
-	require.Nil(t, err)
-	require.Equal(t, len(files), steps)
 }
 
 func TestConfiguredMinim(t *testing.T) {
@@ -175,12 +178,14 @@ func TestConfiguredMinim(t *testing.T) {
 				defer func() {
 					// Notify the tunny func that this test is done
 					doneOuter <- 0
+					close(doneOuter)
 				}()
 				doneInner := make(chan int, 1)
 				go func() {
 					defer func() {
 						// Escape the timeout; experiment has finished
 						doneInner <- 0
+						close(doneInner)
 					}()
 					steps := 5
 					config, _ := json.Marshal(map[string]interface{}{
@@ -189,10 +194,10 @@ func TestConfiguredMinim(t *testing.T) {
 					})
 					url := fmt.Sprintf("http://%s/run", foldyOperator)
 					req, err := http.NewRequest("POST", url, bytes.NewReader(config))
-					require.Nil(t, err)
+					require.NoError(t, err)
 					cl := http.Client{Timeout: time.Minute * 3}
 					resp, err := cl.Do(req)
-					require.Nil(t, err)
+					require.NoError(t, err)
 					if resp.StatusCode != 200 {
 						msg, _ := ioutil.ReadAll(resp.Body)
 						log.Printf("%v", string(msg))
@@ -200,15 +205,15 @@ func TestConfiguredMinim(t *testing.T) {
 					require.Equal(t, resp.StatusCode, 200)
 					defer resp.Body.Close()
 					f, err := ioutil.TempFile("/tmp", "result-*.tar.gz")
-					require.Nil(t, err)
+					require.NoError(t, err)
 					defer func() {
 						require.Nil(t, os.Remove(f.Name()))
 					}()
 					_, err = io.Copy(f, resp.Body)
-					require.Nil(t, err)
+					require.NoError(t, err)
 					require.Nil(t, f.Close())
 					info, err := os.Stat(f.Name())
-					require.Nil(t, err)
+					require.NoError(t, err)
 					require.Greater(t, info.Size(), int64(0))
 					untar(t, f.Name())
 					dirPath := fmt.Sprintf("%s_minim/", pdbID)
@@ -216,7 +221,7 @@ func TestConfiguredMinim(t *testing.T) {
 						require.Nil(t, os.RemoveAll(dirPath))
 					}()
 					files, err := listFiles(dirPath)
-					require.Nil(t, err)
+					require.NoError(t, err)
 					require.Equal(t, len(files), steps)
 				}()
 				select {
@@ -240,7 +245,7 @@ func TestConfiguredMinim(t *testing.T) {
 	pdbIDs := []string{
 		"2L0E",
 		"2K0M",
-		//"2KKP",
+		"2KKP",
 		"1TRL",
 		"2LOJ",
 		"1UJV",
@@ -253,7 +258,6 @@ func TestConfiguredMinim(t *testing.T) {
 		"1QEY",
 		"1E0N",
 		"2LS2",
-		//"1JLO",
 	}
 	numPDBs := len(pdbIDs)
 	dones := make([]chan int, numPDBs, numPDBs)
@@ -269,4 +273,28 @@ func TestConfiguredMinim(t *testing.T) {
 	for _, done := range dones {
 		<-done
 	}
+}
+
+func TestErrBrokenRTP(t *testing.T) {
+	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
+	require.Truef(t, ok, "missing FOLDY_OPERATOR")
+	pdbID := "1jlo"
+	t.Run(pdbID, func(t *testing.T) {
+		steps := 10
+		config, _ := json.Marshal(map[string]interface{}{
+			"pdb_id": pdbID,
+			"steps":  steps,
+		})
+		url := fmt.Sprintf("http://%s/run", foldyOperator)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(config))
+		require.NoError(t, err)
+		cl := http.Client{Timeout: time.Minute * 3}
+		resp, err := cl.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, resp.StatusCode, 500)
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.True(t, strings.Contains(string(body), " was not found in rtp entry "))
+	})
 }

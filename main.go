@@ -52,7 +52,10 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
-func (s *server) createExperimentPodObject(config *RunConfig, correlationID string) (*v1.Pod, error) {
+func (s *server) createExperimentPodObject(
+	config *RunConfig,
+	correlationID string,
+) (*v1.Pod, error) {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s-%s", s.prefix, config.PDBID, correlationID[:8]),
@@ -251,7 +254,7 @@ func newServer() (*server, error) {
 		redis:                client,
 		exit:                 exit,
 		maxUploadSize:        1024 * 1024 * 512, // 512Mi
-		pruneResultTimeout:   15 * time.Minute,
+		pruneResultTimeout:   time.Minute,
 	}
 	go s.listenForPubSub(pubsub.Channel(), exit)
 	s.buildRoutes()
@@ -419,16 +422,19 @@ func (s *server) handleComplete() http.HandlerFunc {
 			if err != nil {
 				return fmt.Errorf("failed to read file: %v", err)
 			}
-			if err := s.fullfillLocalSuccess(correlationID, data); err == errRequestNotFound {
-				if err := s.fullfillRemoteSuccess(correlationID, data); err != nil {
-					return fmt.Errorf("fulfillRemote: %v", err)
+			go func() {
+				// Do not wait to return a response
+				if err := s.fullfillLocalSuccess(correlationID, data); err == errRequestNotFound {
+					if err := s.fullfillRemoteSuccess(correlationID, data); err != nil {
+						log.Printf("fulfillRemote: %v", err)
+					}
+					log.Printf("%s fulfilled remotely", correlationID)
+				} else if err != nil {
+					log.Printf("fulfillLocal: %v", err)
+				} else {
+					log.Printf("%s fulfilled locally", correlationID)
 				}
-				log.Printf("%s fulfilled remotely", correlationID)
-			} else if err != nil {
-				return fmt.Errorf("fulfillLocal: %v", err)
-			} else {
-				log.Printf("%s fulfilled locally", correlationID)
-			}
+			}()
 			return nil
 		}(); err != nil {
 			log.Printf("%v: %v", r.RequestURI, err)
