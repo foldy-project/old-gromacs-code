@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+image=thavlik/foldy
+tag=latest
+docker build -t $image:$tag .
+docker run \
+    -v C:/Users/tlhavlik/.aws:/root/.aws \
+    -it \
+    --name foldy \
+    --rm \
+    $image:$tag \
+    python3 ./simulate.py \
+        --pdb_id 2kkp \
+        --correlation_id 0 \
+        --nsteps 10

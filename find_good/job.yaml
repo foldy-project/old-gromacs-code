@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foldy-operator-find-good
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: foldy-operator-find-good
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+              claimName: foldy-data
+      containers:
+      - name: foldy-operator-find-good
+        imagePullPolicy: Always
+        image: thavlik/foldy-operator-find-good:latest
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        env:
+          - name: FOLDY_OPERATOR
+            value: foldy-operator:8090
+          - name: TIMEOUT
+            value: 240s
+          - name: CONCURRENCY
+            value: '1'
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: aws-credentials
+                key: id
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: aws-credentials
+                key: secret
+            
+            

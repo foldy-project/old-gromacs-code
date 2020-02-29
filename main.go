@@ -138,8 +138,9 @@ func (s *server) runExperiment(config *RunConfig) ([]byte, error) {
 			&metav1.DeleteOptions{},
 		); err != nil {
 			log.Printf("Warning: failed to delete pod: %v", err)
+		} else {
+			log.Printf("Deleted pod %s", pod.Name)
 		}
-		log.Printf("Deleted pod %s", pod.Name)
 	}()
 	log.Printf("Pod created.")
 	req := make(chan interface{}, 1)
@@ -244,7 +245,7 @@ func newServer() (*server, error) {
 	exit := make(chan error, 1)
 	s := &server{
 		namespace:            "default",
-		image:                "thavlik/foldy:latest",
+		image:                "thavlik/foldy-client:latest",
 		prefix:               "foldy-sim",
 		foldyOperatorAddress: "foldy-operator:8090",
 		clientset:            clientset,
@@ -287,6 +288,7 @@ func (s *server) handleBroadcastPayload(correlationID string) error {
 		[]byte(data),
 		payload,
 	); err != nil {
+		req <- fmt.Errorf("unmarshal: %v", err)
 		return fmt.Errorf("unmarshal: %v", err)
 	}
 	if payload.Success {

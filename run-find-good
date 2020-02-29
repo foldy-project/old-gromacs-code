@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+cd $(dirname "$0")
+image=thavlik/foldy-operator-find-good
+tag=latest
+kubectl delete job foldy-operator-find-good || true
+cd find_good
+docker build -t $image:$tag .
+docker push $image:$tag
+kubectl apply -f job.yaml
+watch -n 5 "kubectl get pod"
+

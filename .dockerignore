@@ -1,4 +1,5 @@
 deployment.yaml
 Dockerfile
 .vscode/
-foldy-operator
+./foldy-operator
+test/

@@ -90,7 +90,7 @@ spec:
         imagePullPolicy: Always
         resources:
           limits:
-            memory: "1024Mi"
+            memory: "2048Mi"
             cpu: "500m"
         env:
           - name: REDIS_URI
