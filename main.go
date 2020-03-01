@@ -30,19 +30,19 @@ type RunConfig struct {
 }
 
 type server struct {
-	image                string
-	prefix               string
-	clientset            *kubernetes.Clientset
-	namespace            string
-	foldyOperatorAddress string
-	requests             map[string]chan<- interface{}
-	requestsL            sync.Mutex
-	timeout              time.Duration
-	handler              *http.ServeMux
-	redis                *redis.Client
-	exit                 chan<- error
-	maxUploadSize        int64
-	pruneResultTimeout   time.Duration
+	image                 string
+	prefix                string
+	clientset             *kubernetes.Clientset
+	namespace             string
+	foldyOperatorAddress  string
+	requests              map[string]chan<- interface{}
+	requestsL             sync.Mutex
+	timeout               time.Duration
+	handler               *http.ServeMux
+	redis                 *redis.Client
+	exit                  chan<- error
+	multipartUploadMemory int64
+	pruneResultTimeout    time.Duration
 }
 
 func homeDir() string {
@@ -244,18 +244,18 @@ func newServer() (*server, error) {
 	}
 	exit := make(chan error, 1)
 	s := &server{
-		namespace:            "default",
-		image:                "thavlik/foldy-client:latest",
-		prefix:               "foldy-sim",
-		foldyOperatorAddress: "foldy-operator:8090",
-		clientset:            clientset,
-		requests:             make(map[string]chan<- interface{}),
-		timeout:              time.Minute * 15,
-		handler:              handler,
-		redis:                client,
-		exit:                 exit,
-		maxUploadSize:        1024 * 1024, // 1mb
-		pruneResultTimeout:   time.Minute,
+		namespace:             "default",
+		image:                 "thavlik/foldy-client:latest",
+		prefix:                "foldy-sim",
+		foldyOperatorAddress:  "foldy-operator:8090",
+		clientset:             clientset,
+		requests:              make(map[string]chan<- interface{}),
+		timeout:               time.Minute * 15,
+		handler:               handler,
+		redis:                 client,
+		exit:                  exit,
+		multipartUploadMemory: 1024 * 1024, // 1mb
+		pruneResultTimeout:    time.Minute,
 	}
 	go s.listenForPubSub(pubsub.Channel(), exit)
 	s.buildRoutes()
@@ -407,12 +407,13 @@ func (s *server) fullfillRemoteSuccess(correlationID string, data []byte) error 
 func (s *server) handleComplete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := func() error {
+
 			correlationID, err := getCorrelationIDFromRequest(r)
 			if err != nil {
 				return err
 			}
 			log.Printf("Received completion request, correlationID=%s", correlationID)
-			if err := r.ParseMultipartForm(s.maxUploadSize); err != nil {
+			if err := r.ParseMultipartForm(s.multipartUploadMemory); err != nil {
 				return fmt.Errorf("multipart form: %v", err)
 			}
 			file, _, err := r.FormFile("data")
@@ -425,6 +426,9 @@ func (s *server) handleComplete() http.HandlerFunc {
 				return fmt.Errorf("failed to read file: %v", err)
 			}
 			go func() {
+				// since data is large and we want it gone, try this
+				//defer runtime.GC()
+
 				// Do not wait to return a response
 				if err := s.fullfillLocalSuccess(correlationID, data); err == errRequestNotFound {
 					if err := s.fullfillRemoteSuccess(correlationID, data); err != nil {
