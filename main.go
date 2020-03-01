@@ -254,7 +254,7 @@ func newServer() (*server, error) {
 		handler:              handler,
 		redis:                client,
 		exit:                 exit,
-		maxUploadSize:        1024 * 1024 * 512, // 512Mi
+		maxUploadSize:        1024 * 1024, // 1mb
 		pruneResultTimeout:   time.Minute,
 	}
 	go s.listenForPubSub(pubsub.Channel(), exit)
