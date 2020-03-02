@@ -2,9 +2,9 @@ FROM gromacs/gromacs:latest
 
 RUN apt-get update \
     && apt-get install -y \
-        python3 \
         curl \
         gettext-base \
+        python3 \
     && apt-get clean
 
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
@@ -19,6 +19,7 @@ WORKDIR /app
 COPY minim-modified.mdp.tpl .
 COPY ions.mdp .
 COPY run-simulation.sh .
+COPY normalize.py .
 COPY simulate.py .
 COPY upload.sh .
 COPY trjconv.sh .

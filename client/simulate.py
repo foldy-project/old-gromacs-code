@@ -32,7 +32,7 @@ flags.DEFINE_string("bucket", 'pdb', 'S3 bucket name')
 flags.DEFINE_string("endpoint", 'https://sfo2.digitaloceanspaces.com',
                     "S3 endpoint")
 flags.DEFINE_string("pdb_id", None, "pdb structure ID")
-flags.DEFINE_string("model_id", None, "model ID")
+flags.DEFINE_integer("model_id", None, "model ID")
 flags.DEFINE_string("chain_id", None, "chain ID")
 flags.DEFINE_string("correlation_id", None, "correlation ID")
 flags.DEFINE_string("foldy_operator_host", 'foldy-operator',
@@ -82,11 +82,11 @@ def normalize_structure(input_path: str,
         parser = PDBParser()
         structure = parser.get_structure(pdb_id, input_path)
         if not model_id in structure.child_dict:
-            raise ValueError(f'model "{model_id}" not found in "{pdb_id}"')
+            raise ValueError('model "{}" not found in "{}"'.format(model_id, pdb_id))
         model = structure.child_dict[model_id]
         if not chain_id in model.child_dict:
             raise ValueError(
-                f'chain "{chain_id}" not found in "{pdb_id}" model "{model_id}"')
+                'chain "{}" not found in "{}" model "{}"'.format(chain_id, pdb_id, model_id))
         chain = model.child_dict[chain_id]
 
         new_chain = normalize_chain(chain, ignore_residues=ignore_residues)
@@ -99,7 +99,7 @@ def normalize_structure(input_path: str,
         io = PDBIO()
         io.set_structure(new_structure)
         io.save(out_path)
-        print(f'Normalized {pdb_id} to {out_path}')
+        print('Normalized {} to {}'.format(pdb_id, out_path))
         return out_path
 
 
@@ -121,8 +121,10 @@ def prepare_input_data(pdb_id: str,
         if value.response['Error']['Code'] == '404':
             raise PDBNotFoundException(pdb_id)
         raise
+    print('downloaded {}'.format(path))
     run_cmd(['gzip', '-df', path])
-    return normalize_structure(path,
+    print('did unzip')
+    return normalize_structure('/tmp/pdb{}.ent'.format(pdb_id),
                                pdb_id=pdb_id,
                                model_id=model_id,
                                chain_id=chain_id,

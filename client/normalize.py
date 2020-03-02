@@ -2,15 +2,16 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Chain import Chain
 from Bio.PDB.Atom import Atom
 
+
 def get_atoms_from_desc(residue: Residue, description: list):
     atoms = []
     for i, (element, id) in enumerate(description):
         if not id in residue.child_dict:
-            raise ValueError(f'atom "{id}" not found')
+            raise ValueError('atom "{}" not found'.format(id))
         atom = residue.child_dict[id]
         if atom.element != element:
             raise ValueError(
-                f'expected element "{element}" from atom {i}, got element "{atom.element}"')
+                'expected element "{}" from atom {}, got element "{}"'.format(element, i, atom.element))
         atoms.append(atom)
     return atoms
 
@@ -120,8 +121,8 @@ class Lys(NormalizedResidue):
 class Met(NormalizedResidue):
     def __init__(self, residue: Residue):
         description = [('N', 'N'), ('C', 'CA'), ('C', 'C'),
-                       ('C', 'CB'), ('C', 'CG'), ('S', 'SD'),
-                       ('C', 'CE')]
+                       ('O', 'O'), ('C', 'CB'), ('C', 'CG'),
+                       ('S', 'SD'), ('C', 'CE')]
         super(Met, self).__init__(residue, description)
 
 
@@ -214,28 +215,33 @@ _classes = {
     'ALA': Ala,
 }
 
+
 def get_residue_class(resname: str) -> object:
     if not resname in _classes:
-        raise ValueError(f'unknown resname "{resname}"')
+        raise ValueError('unknown resname "{}"'.format(resname))
     return _classes[resname]
+
 
 def normalize_residue(residue: Residue) -> Residue:
     ty = get_residue_class(residue.resname)
     obj = ty(residue)
     return obj.residue
 
+
 def normalize_chain(chain: Chain, ignore_residues: set) -> Chain:
     new_chain = Chain(chain.id)
     for residue in chain:
         if residue.resname in ignore_residues:
-            print(f'Ignoring residue {residue.resname}')
+            print('Ignoring residue {}'.format(residue.resname))
             continue
         new_chain.add(normalize_residue(residue))
     return new_chain
+
 
 if __name__ == '__main__':
     from simulate import normalize_structure
     ignore_residues = set([
         'HOH',
     ])
-    normalize_structure('pdb1aki.ent', pdb_id='1aki', model_id=0, chain_id='A', ignore_residues=ignore_residues)
+    normalize_structure('pdb1aki.ent', pdb_id='1aki', model_id=0,
+                        chain_id='A', ignore_residues=ignore_residues)

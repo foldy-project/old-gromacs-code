@@ -10,6 +10,8 @@ docker run \
     --rm \
     $image:$tag \
     python3 ./simulate.py \
-        --pdb_id 2kkp \
+        --pdb_id 1aki \
+        --model_id 0 \
+        --chain_id A \
         --correlation_id 0 \
         --nsteps 10
