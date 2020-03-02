@@ -82,7 +82,8 @@ def normalize_structure(input_path: str,
         parser = PDBParser()
         structure = parser.get_structure(pdb_id, input_path)
         if not model_id in structure.child_dict:
-            raise ValueError('model "{}" not found in "{}"'.format(model_id, pdb_id))
+            raise ValueError(
+                'model "{}" not found in "{}"'.format(model_id, pdb_id))
         model = structure.child_dict[model_id]
         if not chain_id in model.child_dict:
             raise ValueError(
@@ -121,9 +122,7 @@ def prepare_input_data(pdb_id: str,
         if value.response['Error']['Code'] == '404':
             raise PDBNotFoundException(pdb_id)
         raise
-    print('downloaded {}'.format(path))
     run_cmd(['gzip', '-df', path])
-    print('did unzip')
     return normalize_structure('/tmp/pdb{}.ent'.format(pdb_id),
                                pdb_id=pdb_id,
                                model_id=model_id,
@@ -151,7 +150,9 @@ def run_simulation(pdb_id: str, input_pdb: str, emtol: float, emstep: float,
     nsteps *= 5
 
     run_cmd([
-        './run-simulation.sh', pdb_id, input_pdb,
+        './run-simulation.sh',
+        pdb_id,
+        input_pdb,
         str(emtol),
         str(emstep),
         str(nsteps),
