@@ -95,6 +95,8 @@ spec:
         env:
           - name: REDIS_URI
             value: foldy-operator-redis:6379
+          - name: GOGC # https://golang.org/pkg/runtime/
+            value: '50'
         ports:
         - containerPort: 8090
 

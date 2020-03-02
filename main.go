@@ -31,7 +31,7 @@ type RunConfig struct {
 
 type server struct {
 	image                 string
-	prefix                string
+	appLabel              string
 	clientset             *kubernetes.Clientset
 	namespace             string
 	foldyOperatorAddress  string
@@ -58,10 +58,10 @@ func (s *server) createExperimentPodObject(
 ) (*v1.Pod, error) {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s-%s", s.prefix, config.PDBID, correlationID[:8]),
+			Name:      fmt.Sprintf("%s-%s-%s", s.appLabel, config.PDBID, correlationID[:8]),
 			Namespace: s.namespace,
 			Labels: map[string]string{
-				"app": fmt.Sprintf("%s-%s", s.prefix, config.PDBID),
+				"app": s.appLabel,
 			},
 		},
 		Spec: v1.PodSpec{
@@ -246,7 +246,7 @@ func newServer() (*server, error) {
 	s := &server{
 		namespace:             "default",
 		image:                 "thavlik/foldy-client:latest",
-		prefix:                "foldy-sim",
+		appLabel:              "foldy-sim",
 		foldyOperatorAddress:  "foldy-operator:8090",
 		clientset:             clientset,
 		requests:              make(map[string]chan<- interface{}),
@@ -325,18 +325,6 @@ func rkResult(correlationID string) string {
 	return fmt.Sprintf("r:%s:i", correlationID)
 }
 
-func getPDBIDFromRequest(r *http.Request) (string, error) {
-	newValues, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse query: %v", err)
-	}
-	pdbIDs, ok := newValues["pdb_id"]
-	if !ok || len(pdbIDs) == 0 {
-		return "", fmt.Errorf("missing pdb_id")
-	}
-	return pdbIDs[0], nil
-}
-
 func getCorrelationIDFromRequest(r *http.Request) (string, error) {
 	newValues, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
@@ -407,7 +395,6 @@ func (s *server) fullfillRemoteSuccess(correlationID string, data []byte) error 
 func (s *server) handleComplete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := func() error {
-
 			correlationID, err := getCorrelationIDFromRequest(r)
 			if err != nil {
 				return err
@@ -425,9 +412,11 @@ func (s *server) handleComplete() http.HandlerFunc {
 			if err != nil {
 				return fmt.Errorf("failed to read file: %v", err)
 			}
+
 			go func() {
-				// since data is large and we want it gone, try this
-				//defer runtime.GC()
+				// Return as much memory to the OS as possible.
+				// https://medium.com/samsara-engineering/running-go-on-low-memory-devices-536e1ca2fe8f
+				//defer debug.FreeOSMemory()
 
 				// Do not wait to return a response
 				if err := s.fullfillLocalSuccess(correlationID, data); err == errRequestNotFound {
@@ -441,6 +430,7 @@ func (s *server) handleComplete() http.HandlerFunc {
 					log.Printf("%s fulfilled locally", correlationID)
 				}
 			}()
+
 			return nil
 		}(); err != nil {
 			log.Printf("%v: %v", r.RequestURI, err)
@@ -550,10 +540,33 @@ func (s *server) listen() {
 	<-make(chan error)
 }
 
+func (s *server) prunePods() error {
+	resp, err := s.clientset.CoreV1().Pods(s.namespace).List(
+		context.TODO(),
+		metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("app=%s", s.appLabel),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("list pods: %v", err)
+	}
+	for _, pod := range resp.Items {
+		switch pod.Status.Phase {
+		case "Succeeded":
+		case "Error":
+		default:
+		}
+	}
+	return nil
+}
+
 func entry() error {
 	s, err := newServer()
 	if err != nil {
 		return fmt.Errorf("constructor: %v", err)
+	}
+	if err := s.prunePods(); err != nil {
+		log.Printf("Warning: failed to prune pods: %v", err)
 	}
 	s.listen()
 	return nil
