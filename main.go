@@ -25,8 +25,10 @@ import (
 
 // RunConfig ...
 type RunConfig struct {
-	PDBID string `json:"pdb_id"`
-	Steps int    `json:"steps"`
+	PDBID   string `json:"pdb_id"`
+	Steps   int    `json:"steps"`
+	ModelID int    `json:"model_id"`
+	ChainID string `json:"chain_id"`
 }
 
 type server struct {
@@ -86,6 +88,10 @@ func (s *server) createExperimentPodObject(
 						"./simulate.py",
 						"--pdb_id",
 						config.PDBID,
+						"--model_id",
+						fmt.Sprintf("%d", config.ModelID),
+						"--chain_id",
+						config.ChainID,
 						"--correlation_id",
 						correlationID,
 						"--nsteps",
@@ -459,6 +465,10 @@ func (s *server) handleRun() http.HandlerFunc {
 				// Run a simulation for less than two steps?
 				statusCode = http.StatusBadRequest
 				return fmt.Errorf("expected >1 steps, got %d", config.Steps)
+			}
+			if config.ChainID == "" {
+				statusCode = http.StatusBadRequest
+				return fmt.Errorf("missing chain_id")
 			}
 			log.Printf("Received run request, pdb=%s", config.PDBID)
 			body, err = s.runExperiment(config)
