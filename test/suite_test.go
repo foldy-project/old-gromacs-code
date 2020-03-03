@@ -23,10 +23,10 @@ func TestErrBrokenPDB(t *testing.T) {
 	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
 	require.Truef(t, ok, "missing FOLDY_OPERATOR")
 	config, _ := json.Marshal(map[string]interface{}{
-		"pdb_id":   "broken", // s3://pdb/pdbbroken.ent.gz contains
-		"steps":    100,      // random junk text for this test
+		"pdb_id":   "broken", // s3://pdb/pdbbroken.ent.gz contains random junk text for this test
 		"model_id": 1,
 		"chain_id": "B",
+		"steps":    100,
 	})
 	url := fmt.Sprintf("http://%s/run", foldyOperator)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
@@ -47,9 +47,9 @@ func TestErrPDBNotFound(t *testing.T) {
 	pdbID := "abcd"
 	config, _ := json.Marshal(map[string]interface{}{
 		"pdb_id":   pdbID,
-		"steps":    100,
 		"model_id": 0,
 		"chain_id": "A",
+		"steps":    100,
 	})
 	url := fmt.Sprintf("http://%s/run", foldyOperator)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
@@ -141,9 +141,9 @@ func TestBasicMinim(t *testing.T) {
 		steps := 10
 		config, _ := json.Marshal(map[string]interface{}{
 			"pdb_id":   pdbID,
-			"steps":    steps,
 			"model_id": 0,
 			"chain_id": "A",
+			"steps":    steps,
 		})
 		url := fmt.Sprintf("http://%s/run", foldyOperator)
 		req, err := http.NewRequest("POST", url, bytes.NewReader(config))

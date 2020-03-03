@@ -150,51 +150,10 @@ func (s *server) runExperiment(config *RunConfig) ([]byte, error) {
 	}()
 	log.Printf("Pod created.")
 	req := make(chan interface{}, 1)
-	//problem := make(chan error, 1)
-	//stop := make(chan int, 1)
-	//defer func() {
-	//	stop <- 0
-	//	close(stop)
-	//}()
-	//go func() {
-	//	defer close(problem)
-	//	probeInterval := time.Second * 3
-	//	for {
-	//		select {
-	//		case <-stop:
-	//			return
-	//		case <-time.After(probeInterval):
-	//			// Get the pod status
-	//			info, err := s.clientset.CoreV1().Pods(s.namespace).Get(
-	//				context.TODO(),
-	//				pod.Name,
-	//				metav1.GetOptions{},
-	//			)
-	//			if err != nil {
-	//				problem <- fmt.Errorf("encountered error while creating pod: %v", err)
-	//				return
-	//			}
-	//			log.Printf("Pod phase: %v", info.Status.Phase)
-	//			switch info.Status.Phase {
-	//			case "Pending":
-	//				continue
-	//			case "Running":
-	//				continue
-	//			case "Succeeded":
-	//				continue
-	//			default:
-	//				problem <- fmt.Errorf("encountered unexpected phase '%s'", info.Status.Phase)
-	//				return
-	//			}
-	//		}
-	//	}
-	//}()
 	s.requestsL.Lock()
 	s.requests[correlationID] = req
 	s.requestsL.Unlock()
 	select {
-	//case err := <-problem:
-	//	return nil, err
 	case result := <-req:
 		if err, ok := result.(error); ok && err != nil {
 			return nil, err
