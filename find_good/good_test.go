@@ -63,9 +63,12 @@ func TestConfiguredMinim(t *testing.T) {
 
 	log.Printf("Running minimization experiments with concurrency of %d", concurrency)
 
-	data, err := ioutil.ReadFile("good.txt")
+	f, err := os.Open("/data/casp11/training_30")
 	require.NoError(t, err)
-	good := strings.Split(string(data), "\n")
+	results := make(chan *record)
+	go func() {
+		require.NoError(t, ReadProteinNet(f, results))
+	}()
 
 	definitelyGood, err := os.Create("/data/definitely-good.txt")
 	require.NoError(t, err)
@@ -75,11 +78,11 @@ func TestConfiguredMinim(t *testing.T) {
 	definitelyGoodL := sync.Mutex{}
 
 	pool := tunny.NewFunc(concurrency, func(payload interface{}) interface{} {
-		pdbID := payload.(string)
-		pdbID = strings.ToLower(pdbID)
+		r := payload.(*record)
 		doneOuter := make(chan int, 1)
 		go func() {
-			t.Run(pdbID, func(t *testing.T) {
+			suite := fmt.Sprintf("%s_%d_%s", r.pdbID, r.modelID, r.chainID)
+			t.Run(suite, func(t *testing.T) {
 				defer func() {
 					// Notify the tunny func that this test is done
 					doneOuter <- 0
@@ -94,8 +97,10 @@ func TestConfiguredMinim(t *testing.T) {
 					}()
 					steps := 5
 					config, _ := json.Marshal(map[string]interface{}{
-						"pdb_id": pdbID,
-						"steps":  steps,
+						"pdb_id":   r.pdbID,
+						"model_id": r.modelID,
+						"chain_id": r.chainID,
+						"steps":    steps,
 					})
 					url := fmt.Sprintf("http://%s/run", foldyOperator)
 					req, err := http.NewRequest("POST", url, bytes.NewReader(config))
@@ -121,7 +126,7 @@ func TestConfiguredMinim(t *testing.T) {
 					require.NoError(t, err)
 					require.Greater(t, info.Size(), int64(0))
 					untar(t, f.Name())
-					dirPath := fmt.Sprintf("%s_minim/", pdbID)
+					dirPath := fmt.Sprintf("%s_minim/", strings.ToLower(r.pdbID))
 					defer func() {
 						require.Nil(t, os.RemoveAll(dirPath))
 					}()
@@ -136,7 +141,7 @@ func TestConfiguredMinim(t *testing.T) {
 				}
 				definitelyGoodL.Lock()
 				defer definitelyGoodL.Unlock()
-				_, err = definitelyGood.Write([]byte(fmt.Sprintf("%s\n", pdbID)))
+				_, err = definitelyGood.Write([]byte(fmt.Sprintf("%s\n", r.pdbID)))
 				require.NoError(t, err)
 			})
 		}()
@@ -144,21 +149,7 @@ func TestConfiguredMinim(t *testing.T) {
 		return nil
 	})
 	defer pool.Close()
-
-	numPDBs := len(good)
-	dones := make([]chan int, numPDBs, numPDBs)
-	for i, pdbID := range good {
-		pdbID = strings.ToLower(strings.TrimSpace(pdbID))
-		require.Equalf(t, 4, len(pdbID), "malformed pdb ID '%v'", pdbID)
-		done := make(chan int, 1)
-		dones[i] = done
-		//go func(pdbID string, done chan<- int) {
-		pool.Process(pdbID)
-		done <- 0
-		close(done)
-		//}(pdbID, done)
-	}
-	for _, done := range dones {
-		<-done
+	for r := range results {
+		pool.Process(r)
 	}
 }

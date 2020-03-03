@@ -15,14 +15,30 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := ReadProteinNet(f); err != nil {
-		log.Fatal(err)
+	results := make(chan *record)
+	go func() {
+		if err := ReadProteinNet(f, results); err != nil {
+			log.Fatal(err)
+		}
+	}()
+	for r := range results {
+		log.Printf("PDB=%v ModelID=%v ChainID=%v PrimaryLen=%d", r.pdbID, r.modelID, r.chainID, len(r.primary))
 	}
 }
 
+type record struct {
+	pdbID   string
+	modelID int
+	chainID string
+	primary string
+	mask    string
+}
+
 // ReadProteinNet ...
-func ReadProteinNet(r io.Reader) error {
+func ReadProteinNet(r io.Reader, results chan<- *record) error {
+	defer close(results)
 	scanner := bufio.NewScanner(r)
+	var next *record
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch line {
@@ -40,14 +56,40 @@ func ReadProteinNet(r io.Reader) error {
 					return fmt.Errorf("failed to parse model ID '%v': %v", modelIDStr, err)
 				}
 				chainID := parts[2]
-				log.Printf("PDB=%v ModelID=%v ChainID=%v", pdbID, modelID, chainID)
+				next = &record{
+					pdbID:   pdbID,
+					modelID: int(modelID),
+					chainID: chainID,
+				}
 			} else if len(parts) == 2 {
 				//log.Printf("Skipping ASTRAL %v", id)
 			} else {
 				log.Printf("Unknown ID format '%v'", id)
 				continue
 			}
-		//case "": // new record
+		case "[PRIMARY]":
+			if next != nil {
+				if !scanner.Scan() {
+					return fmt.Errorf("expected primary sequence")
+				}
+				next.primary = scanner.Text()
+			}
+		case "[MASK]":
+			if next != nil {
+				if !scanner.Scan() {
+					return fmt.Errorf("expected mask")
+				}
+				next.mask = scanner.Text()
+			}
+		case "":
+			if next != nil {
+				if got, expected := len(next.mask), len(next.primary); got != expected {
+					panic(fmt.Sprintf("mask length (got %v, expected %v)", got, expected))
+				}
+				results <- next
+				next = nil
+			}
+			continue
 		default:
 			// Skip the line
 			continue

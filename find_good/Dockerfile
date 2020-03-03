@@ -5,11 +5,10 @@ RUN apt-get update \
         curl \
         tar \
         gzip \
-        python3 \
     && apt-get clean
 
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
-    && python3 get-pip.py \
+    && python get-pip.py \
     && pip install awscli
 
 RUN go get github.com/stretchr/testify/require \
@@ -18,5 +17,6 @@ RUN go get github.com/stretchr/testify/require \
 
 WORKDIR /app
 COPY entrypoint.sh .
+COPY main.go .
 COPY good_test.go .
 ENTRYPOINT [ "./entrypoint.sh" ]

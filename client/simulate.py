@@ -83,11 +83,11 @@ def normalize_structure(input_path: str,
         structure = parser.get_structure(pdb_id, input_path)
         if not model_id in structure.child_dict:
             raise ValueError(
-                'model "{}" not found in "{}"'.format(model_id, pdb_id))
+                'model "{}" not found in "{}", options are {}'.format(model_id, pdb_id, list(structure.child_dict.keys())))
         model = structure.child_dict[model_id]
         if not chain_id in model.child_dict:
             raise ValueError(
-                'chain "{}" not found in "{}" model "{}"'.format(chain_id, pdb_id, model_id))
+                'chain "{}" not found in "{}" model "{}", options are {}'.format(chain_id, pdb_id, model_id, list(model.child_dict.keys())))
         chain = model.child_dict[chain_id]
 
         new_chain = normalize_chain(chain, ignore_residues=ignore_residues)
