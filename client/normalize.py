@@ -216,9 +216,13 @@ _classes = {
 }
 
 
+class UnknownResidueError(ValueError):
+    def __init__(self, resname: str):
+        super(UnknownResidueError, self).__init__('unknown resname "{}"'.format(resname))
+
 def get_residue_class(resname: str) -> object:
     if not resname in _classes:
-        raise ValueError('unknown resname "{}"'.format(resname))
+        raise UnknownResidueError(resname)
     return _classes[resname]
 
 
@@ -232,9 +236,11 @@ def normalize_chain(chain: Chain, ignore_residues: set) -> Chain:
     new_chain = Chain(chain.id)
     for residue in chain:
         if residue.resname in ignore_residues:
-            print('Ignoring residue {}'.format(residue.resname))
             continue
-        new_chain.add(normalize_residue(residue))
+        try:
+            new_chain.add(normalize_residue(residue))
+        except UnknownResidueError:
+            print('Ignoring residue {}'.format(residue.resname))
     return new_chain
 
 

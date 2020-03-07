@@ -101,6 +101,8 @@ func TestConfiguredMinim(t *testing.T) {
 						"model_id": r.modelID,
 						"chain_id": r.chainID,
 						"steps":    steps,
+						"primary":  r.primary,
+						"mask":     r.mask,
 					})
 					url := fmt.Sprintf("http://%s/run", foldyOperator)
 					req, err := http.NewRequest("POST", url, bytes.NewReader(config))

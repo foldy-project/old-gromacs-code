@@ -38,7 +38,7 @@ func TestErrBrokenPDB(t *testing.T) {
 	require.Equal(t, 500, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Equal(t, "model \"1\" not found in \"broken\"", string(body))
+	require.Equal(t, "model \"1\" not found in \"broken\", options are []", string(body))
 }
 
 func TestErrPDBNotFound(t *testing.T) {

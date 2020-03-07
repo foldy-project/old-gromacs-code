@@ -35,6 +35,9 @@ flags.DEFINE_string("pdb_id", None, "pdb structure ID")
 flags.DEFINE_integer("model_id", None, "model ID")
 flags.DEFINE_string("chain_id", None, "chain ID")
 flags.DEFINE_string("correlation_id", None, "correlation ID")
+flags.DEFINE_string(
+    "primary", None, "input primary sequence (sanity check, optional)")
+flags.DEFINE_string("mask", None, "input mask (sanity check, optional)")
 flags.DEFINE_string("foldy_operator_host", 'foldy-operator',
                     "foldy operator host")
 flags.DEFINE_integer("foldy_operator_port", 8090, "foldy operator port")
@@ -44,6 +47,7 @@ flags.DEFINE_float(
 flags.DEFINE_float("emstep", 0.01, "minimization step size")
 flags.DEFINE_integer("nsteps", 1000, "simulation steps")
 flags.DEFINE_float("dt", 0.0002, "simulation time step")
+flags.DEFINE_boolean("no_report", False, "skip error report")
 
 
 class PDBNotFoundException(Exception):
@@ -72,25 +76,83 @@ def report_error(msg: str):
             response.code))
 
 
+_resname_abbrev = {
+    'PRO': 'P',
+    'MET': 'M',
+    'ASP': 'D',
+    'VAL': 'V',
+    'SER': 'S',
+    'HIS': 'H',
+    'GLU': 'E',
+    'GLN': 'Q',
+    'ASN': 'N',
+    'GLY': 'G',
+    'ILE': 'I',
+    'LYS': 'K',
+    'TRP': 'W',
+    'TYR': 'Y',
+    'THR': 'T',
+    'ARG': 'R',
+    'PHE': 'F',
+    'CYS': 'C',
+    'LEU': 'L',
+    'ALA': 'A',
+}
+
+
+def resname_to_abbrev(resname: str) -> str:
+    if not resname in _resname_abbrev:
+        raise ValueError('unknown resname "{}"'.format(resname))
+    return _resname_abbrev[resname]
+
+
 def normalize_structure(input_path: str,
                         pdb_id: str,
                         model_id: int,
                         chain_id: str,
-                        ignore_residues: set):
+                        ignore_residues: set,
+                        primary=None,
+                        mask=None):
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("ignore", PDBConstructionWarning)
         parser = PDBParser()
         structure = parser.get_structure(pdb_id, input_path)
         if not model_id in structure.child_dict:
-            raise ValueError(
-                'model "{}" not found in "{}", options are {}'.format(model_id, pdb_id, list(structure.child_dict.keys())))
-        model = structure.child_dict[model_id]
+            if primary and model_id-1 in structure.child_dict:
+                # later on we'll ensure primary sequence is correct
+                model = structure.child_dict[model_id-1]
+                print('Supposing model {} is {}...'.format(model_id-1, model_id))
+            else:
+                raise ValueError(
+                    'model "{}" not found in "{}", options are {}'.format(model_id, pdb_id, list(structure.child_dict.keys())))
+        else:
+            model = structure.child_dict[model_id]
         if not chain_id in model.child_dict:
             raise ValueError(
                 'chain "{}" not found in "{}" model "{}", options are {}'.format(chain_id, pdb_id, model_id, list(model.child_dict.keys())))
         chain = model.child_dict[chain_id]
 
-        new_chain = normalize_chain(chain, ignore_residues=ignore_residues)
+        new_chain = normalize_chain(chain,
+                                    ignore_residues=ignore_residues)
+
+        if primary:
+            assert mask
+
+            # verify that the sequence is what we expect
+            resnames = [resname_to_abbrev(residue.resname)
+                        for residue in new_chain]
+                
+            #print(''.join(resnames))
+            if len(resnames) != mask.count('+'):
+               raise ValueError('length of normalized chain ({}) not match supplied primary sequence ({})'.format(
+                   len(resnames), mask.count('+')))
+            for i, resname in enumerate(resnames):
+                got = resname_to_abbrev(resname)
+                expected = primary[i]
+                if got != expected:
+                    raise ValueError(
+                        'got residue {} in position {}, expected {}'.format(got, i, expected))
+
         new_model = Model(model.id)
         new_model.add(new_chain)
         new_structure = Structure(structure.id)
@@ -107,7 +169,9 @@ def normalize_structure(input_path: str,
 def prepare_input_data(pdb_id: str,
                        model_id: str,
                        chain_id: str,
-                       ignore_residues: set) -> str:
+                       ignore_residues: set,
+                       primary=None,
+                       mask=None) -> str:
     s3 = boto3.resource('s3',
                         region_name=FLAGS.region,
                         endpoint_url=FLAGS.endpoint)
@@ -127,7 +191,9 @@ def prepare_input_data(pdb_id: str,
                                pdb_id=pdb_id,
                                model_id=model_id,
                                chain_id=chain_id,
-                               ignore_residues=ignore_residues)
+                               ignore_residues=ignore_residues,
+                               primary=primary,
+                               mask=mask)
 
 
 def run_cmd(args, expect_exitcode=0):
@@ -200,6 +266,8 @@ def calc_deltas(structures: List[Structure]):
 def main(_argv):
     ignore_residues = set([
         'HOH',
+        'ANP',
+        ' MG',
     ])
     try:
         if not FLAGS.pdb_id:
@@ -214,7 +282,9 @@ def main(_argv):
         input_pdb = prepare_input_data(pdb_id=pdb_id,
                                        model_id=FLAGS.model_id,
                                        chain_id=FLAGS.chain_id,
-                                       ignore_residues=ignore_residues)
+                                       ignore_residues=ignore_residues,
+                                       primary=FLAGS.primary,
+                                       mask=FLAGS.mask)
         print('Running simulation...')
         run_simulation(pdb_id=pdb_id,
                        input_pdb=input_pdb,
@@ -228,8 +298,9 @@ def main(_argv):
         print('Uploading results...')
         upload(pdb_id, correlation_id)
     except:
-        _, value, _ = sys.exc_info()
-        report_error(str(value))
+        if not FLAGS.no_report:
+            _, value, _ = sys.exc_info()
+            report_error(str(value))
         raise
     return 0
 

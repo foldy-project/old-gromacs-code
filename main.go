@@ -29,6 +29,8 @@ type RunConfig struct {
 	Steps   int    `json:"steps"`
 	ModelID int    `json:"model_id"`
 	ChainID string `json:"chain_id"`
+	Primary string `json:"primary"`
+	Mask    string `json:"mask"`
 }
 
 type server struct {
@@ -92,6 +94,10 @@ func (s *server) createExperimentPodObject(
 						fmt.Sprintf("%d", config.ModelID),
 						"--chain_id",
 						config.ChainID,
+						"--primary",
+						config.Primary,
+						"--mask",
+						config.Mask,
 						"--correlation_id",
 						correlationID,
 						"--nsteps",

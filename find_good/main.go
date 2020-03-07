@@ -95,5 +95,6 @@ func ReadProteinNet(r io.Reader, results chan<- *record) error {
 			continue
 		}
 	}
+	log.Printf("Success")
 	return nil
 }
