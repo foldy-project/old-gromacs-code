@@ -3,6 +3,7 @@
 integrator  = md            ; Algorithm (steep = steepest descent minimization)
 nsteps      = ${nsteps}     ; Maximum number of (minimization) steps to perform
 dt		    = ${dt}         ; deltatime in picoseconds (default 0.002 ps = 2 fs)
+ld-seed     = ${seed}       ; Langevin dynamics seed (default -1, random)
 
 ; Parameters describing how to find the neighbors of each atom and how to calculate the interactions
 nstlist         = 1         ; Frequency to update the neighbor list and long range forces

@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thavlik/ribbon/pdb"
 )
 
 func TestErrBrokenPDB(t *testing.T) {
@@ -83,9 +84,8 @@ func listFiles(path string) ([]string, error) {
 func TestErrZeroSteps(t *testing.T) {
 	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
 	require.Truef(t, ok, "missing FOLDY_OPERATOR")
-	pdbID := "1aki"
 	config, _ := json.Marshal(map[string]interface{}{
-		"pdb_id":   pdbID,
+		"pdb_id":   "1aki",
 		"model_id": 0,
 		"chain_id": "A",
 	})
@@ -100,6 +100,29 @@ func TestErrZeroSteps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Equal(t, "expected >1 steps, got 0", string(body))
+}
+
+func TestErrInvalidSeed(t *testing.T) {
+	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
+	require.Truef(t, ok, "missing FOLDY_OPERATOR")
+	config, _ := json.Marshal(map[string]interface{}{
+		"pdb_id":   "1aki",
+		"model_id": 0,
+		"chain_id": "A",
+		"steps":    10,
+		"seed":     -2,
+	})
+	url := fmt.Sprintf("http://%s/run", foldyOperator)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(config))
+	require.NoError(t, err)
+	cl := http.Client{Timeout: time.Minute * 3}
+	resp, err := cl.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, "invalid seed", string(body))
 }
 
 func TestErrMissingChainID(t *testing.T) {
@@ -172,6 +195,94 @@ func TestBasicMinim(t *testing.T) {
 		files, err := listFiles(fmt.Sprintf("%s_minim/", pdbID))
 		require.NoError(t, err)
 		require.Equal(t, len(files), steps)
+	})
+}
+
+func TestLangevinSeed(t *testing.T) {
+	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
+	require.Truef(t, ok, "missing FOLDY_OPERATOR")
+	pdbID := "4jrn"
+	modelID := 1
+	chainID := "A"
+	primary := "GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE"
+	mask := "----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------"
+	t.Run("should be deterministic", func(t *testing.T) {
+		steps := 10
+		config, _ := json.Marshal(map[string]interface{}{
+			"pdb_id":   pdbID,
+			"model_id": modelID,
+			"chain_id": chainID,
+			"primary":  primary,
+			"mask":     mask,
+			"steps":    steps,
+			"seed":     1,
+		})
+		url := fmt.Sprintf("http://%s/run", foldyOperator)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(config))
+		require.NoError(t, err)
+		cl := http.Client{Timeout: time.Minute * 3}
+		resp, err := cl.Do(req)
+		require.NoError(t, err)
+		if resp.StatusCode != 200 {
+			msg, _ := ioutil.ReadAll(resp.Body)
+			log.Printf("%v", string(msg))
+		}
+		require.Equal(t, resp.StatusCode, 200)
+		defer resp.Body.Close()
+		f, err := ioutil.TempFile("/tmp", "result-*.tar.gz")
+		require.NoError(t, err)
+		defer func() {
+			require.Nil(t, os.Remove(f.Name()))
+		}()
+		_, err = io.Copy(f, resp.Body)
+		require.NoError(t, err)
+		require.Nil(t, f.Close())
+		info, err := os.Stat(f.Name())
+		require.NoError(t, err)
+		require.Greater(t, info.Size(), int64(0))
+		untar(t, f.Name())
+		files, err := listFiles(fmt.Sprintf("%s_minim/", pdbID))
+		require.NoError(t, err)
+		require.Equal(t, len(files), steps)
+		for i := 0; i < steps; i++ {
+			f, err := os.Open(fmt.Sprintf("%s_minim/%s_minim_%d.pdb", pdbID, pdbID, i))
+			require.NoError(t, err)
+			defer f.Close()
+			r := pdb.NewReader(f)
+			models, err := r.ReadAll()
+			require.NoError(t, err)
+			//for modelID, model := range models {
+			//	log.Printf("modelID=%v", modelID)
+			//	for _, chain := range model.Chains {
+			//		log.Printf("\tchain %v", chain.ChainID)
+			//		for _, residue := range chain.Residues[:10] {
+			//			atomNames := make([]string, len(residue.Atoms), len(residue.Atoms))
+			//			for j, atom := range residue.Atoms {
+			//				atomNames[j] = atom.Name
+			//			}
+			//			log.Printf("\t%v %v", residue.ResName, atomNames)
+			//		}
+			//	}
+			//}
+			assert.Equal(t, 1, len(models))
+			model := models[0]
+			assert.Equal(t, 1, len(model.Chains))
+			chain := model.Chains[0]
+			numKnownResidues := 0
+			for c := 0; c < len(mask); c++ {
+				if mask[c] == '+' {
+					numKnownResidues++
+				}
+			}
+			numActual := 0
+			for _, residue := range chain.Residues {
+				if residue.ResName == "SOL" {
+					break
+				}
+				numActual++
+			}
+			assert.Equal(t, numKnownResidues, numActual)
+		}
 	})
 }
 

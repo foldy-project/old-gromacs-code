@@ -47,6 +47,7 @@ flags.DEFINE_float(
 flags.DEFINE_float("emstep", 0.01, "minimization step size")
 flags.DEFINE_integer("nsteps", 1000, "simulation steps")
 flags.DEFINE_float("dt", 0.0002, "simulation time step")
+flags.DEFINE_integer("seed", -1, "Langevin dynamics seed")
 flags.DEFINE_boolean("no_report", False, "skip error report")
 
 
@@ -100,9 +101,13 @@ _resname_abbrev = {
 }
 
 
+class UnknownResnameError(ValueError):
+    def __init__(self, resname: str):
+        super(UnknownResnameError, self).__init__('unknown resname "{}"'.format(resname))
+
 def resname_to_abbrev(resname: str) -> str:
     if not resname in _resname_abbrev:
-        raise ValueError('unknown resname "{}"'.format(resname))
+        raise UnknownResnameError(resname)
     return _resname_abbrev[resname]
 
 
@@ -139,19 +144,29 @@ def normalize_structure(input_path: str,
             assert mask
 
             # verify that the sequence is what we expect
-            resnames = [resname_to_abbrev(residue.resname)
-                        for residue in new_chain]
-                
-            #print(''.join(resnames))
-            if len(resnames) != mask.count('+'):
-               raise ValueError('length of normalized chain ({}) not match supplied primary sequence ({})'.format(
-                   len(resnames), mask.count('+')))
-            for i, resname in enumerate(resnames):
-                got = resname_to_abbrev(resname)
-                expected = primary[i]
+            abbrev = []
+            for residue in new_chain:
+                try:
+                    abbrev.append(resname_to_abbrev(residue.resname))
+                except UnknownResnameError:
+                    print('Skipping residue "{}"'.format(residue.resname))
+                    pass
+            
+            # extract the known primary sequence using the mask
+            known_primary = []
+            for r, m in zip(primary, mask):
+                if m != '+':
+                    continue
+                known_primary.append(r)
+
+            # ensure the sequence lengths match
+            if len(abbrev) != len(known_primary):
+                raise ValueError('length of normalized chain ({}) not match supplied primary sequence ({})'.format(
+                    len(abbrev), len(known_primary)))
+            # ensure residue identities match
+            for i, (got, expected) in enumerate(zip(abbrev, known_primary)):
                 if got != expected:
-                    raise ValueError(
-                        'got residue {} in position {}, expected {}'.format(got, i, expected))
+                    raise ValueError('mismatch residue at position {} (got {}, expected {})'.format(i, got, expected))
 
         new_model = Model(model.id)
         new_model.add(new_chain)
@@ -165,6 +180,7 @@ def normalize_structure(input_path: str,
         print('Normalized {} to {}'.format(pdb_id, out_path))
         return out_path
 
+tmpdir = '/tmp'
 
 def prepare_input_data(pdb_id: str,
                        model_id: str,
@@ -176,7 +192,7 @@ def prepare_input_data(pdb_id: str,
                         region_name=FLAGS.region,
                         endpoint_url=FLAGS.endpoint)
     bucket = s3.Bucket(name=FLAGS.bucket)
-    path = '/tmp/pdb{}.ent.gz'.format(pdb_id)
+    path = os.path.join(tmpdir, 'pdb{}.ent.gz'.format(pdb_id))
     try:
         object = bucket.Object('pdb{}.ent.gz'.format(pdb_id))
         with open(path, 'wb') as f:
@@ -187,7 +203,7 @@ def prepare_input_data(pdb_id: str,
             raise PDBNotFoundException(pdb_id)
         raise
     run_cmd(['gzip', '-df', path])
-    return normalize_structure('/tmp/pdb{}.ent'.format(pdb_id),
+    return normalize_structure(os.path.join(tmpdir, 'pdb{}.ent'.format(pdb_id)),
                                pdb_id=pdb_id,
                                model_id=model_id,
                                chain_id=chain_id,
@@ -206,8 +222,13 @@ def run_cmd(args, expect_exitcode=0):
         raise ValueError(msg)
 
 
-def run_simulation(pdb_id: str, input_pdb: str, emtol: float, emstep: float,
-                   nsteps: int, dt: float):
+def run_simulation(pdb_id: str,
+                   input_pdb: str,
+                   emtol: float,
+                   emstep: float,
+                   nsteps: int,
+                   dt: float,
+                   seed: int):
     # TODO
     # it is unclear why this number needs to be ~5x
     # larger in order to generate enough frame data.
@@ -222,16 +243,18 @@ def run_simulation(pdb_id: str, input_pdb: str, emtol: float, emstep: float,
         str(emtol),
         str(emstep),
         str(nsteps),
-        str(dt)
+        str(dt),
+        str(seed),
     ])
     return 0
 
 
-def trjconv(pdb_id: str, nsteps: int):
+def trjconv(pdb_id: str, nsteps: int) -> List[str]:
+    structure_paths = []
     for i in range(nsteps):
         proc = subprocess.run(
             ['./trjconv.sh', pdb_id,
-                str(i), str(i + 1)],
+                str(i), str(i)],
             stdout=PIPE,
             stderr=PIPE)
         if proc.returncode != 0:
@@ -242,14 +265,27 @@ def trjconv(pdb_id: str, nsteps: int):
                 i, str(proc.stdout), str(proc.stderr)))
         path = '{}_minim_{}.pdb'.format(pdb_id, i)
         assert os.path.isfile(path)
-
+        structure_paths.append(path)
+    return structure_paths
 
 def upload(pdb_id: str, correlation_id: str):
     run_cmd(['./upload.sh', pdb_id, correlation_id])
     print('Results uploaded')
 
 
-def calc_deltas(structures: List[Structure]):
+def calc_deltas(pdb_id: str, structures: List[str]):
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("ignore", PDBConstructionWarning)
+        parser = PDBParser()
+        for input_path in structures:
+            structure = parser.get_structure(pdb_id, input_path)
+            print(input_path)
+            for model in structure:
+                print('\tmodel {}:'.format(model.id))
+                for chain in model:
+                    print('\t\tchain {}:'.format(chain))
+                    for residue in chain.child_list[:10]:
+                        print('\t\t\t{}', residue.resname)
     # for i, (a, b) in enumerate(zip(structures[:-1], structures[1:])):
     #    for (model_a, model_b) in zip(a, b):
     #        for (chain_a, chain_b) in zip(model_a, model_b):
@@ -291,12 +327,14 @@ def main(_argv):
                        emtol=FLAGS.emtol,
                        emstep=FLAGS.emstep,
                        nsteps=FLAGS.nsteps,
-                       dt=FLAGS.dt)
+                       dt=FLAGS.dt,
+                       seed=FLAGS.seed)
         print('Extracting frames...')
-        trjconv(pdb_id, FLAGS.nsteps)
-        #deltas = calc_deltas(structures)
-        print('Uploading results...')
-        upload(pdb_id, correlation_id)
+        structure_paths = trjconv(pdb_id, FLAGS.nsteps)
+        calc_deltas(pdb_id, structure_paths)
+        if not FLAGS.no_report:
+            print('Uploading results...')
+            upload(pdb_id, correlation_id)
     except:
         if not FLAGS.no_report:
             _, value, _ = sys.exc_info()

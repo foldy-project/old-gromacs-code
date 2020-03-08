@@ -16,6 +16,7 @@ require (
 	github.com/emicklei/go-restful v2.11.2+incompatible // indirect
 	github.com/envoyproxy/go-control-plane v0.9.4 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
+	github.com/fogleman/ribbon v0.0.0-20191101191537-568057efb726
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200221102942-eb749776b5d7 // indirect
 	github.com/go-openapi/jsonreference v0.19.3 // indirect
@@ -41,6 +42,7 @@ require (
 	github.com/rogpeppe/go-internal v1.5.2 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.5.1
+	github.com/thavlik/ribbon v0.0.0-20200308161121-1ab3ca6cf0e4
 	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d // indirect
 	golang.org/x/exp v0.0.0-20200221183520-7c80518d1cc7 // indirect
 	golang.org/x/image v0.0.0-20200119044424-58c23975cae1 // indirect

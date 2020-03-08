@@ -14,6 +14,7 @@ spec:
       - name: foldy-operator-test
         imagePullPolicy: Always
         image: thavlik/foldy-operator-test:latest
+        args: ["-run", "TestLangevinSeed"]
         resources:
           limits:
             memory: "512Mi"

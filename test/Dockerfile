@@ -8,7 +8,8 @@ RUN apt-get update && \
 
 RUN go get github.com/stretchr/testify/require \
     github.com/stretchr/testify/assert \
-    github.com/Jeffail/tunny
+    github.com/Jeffail/tunny \
+    github.com/thavlik/ribbon/pdb
 
 WORKDIR /app
 COPY entrypoint.sh .

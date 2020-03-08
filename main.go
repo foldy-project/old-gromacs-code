@@ -31,6 +31,7 @@ type RunConfig struct {
 	ChainID string `json:"chain_id"`
 	Primary string `json:"primary"`
 	Mask    string `json:"mask"`
+	Seed    int    `json:"seed"`
 }
 
 type server struct {
@@ -435,7 +436,14 @@ func (s *server) handleRun() http.HandlerFunc {
 				statusCode = http.StatusBadRequest
 				return fmt.Errorf("missing chain_id")
 			}
-			log.Printf("Received run request, pdb=%s", config.PDBID)
+			if config.Seed < -1 {
+				statusCode = http.StatusBadRequest
+				return fmt.Errorf("invalid seed")
+			} else if config.Seed == 0 {
+				// Default seed to -1, which is random
+				config.Seed = -1
+			}
+			log.Printf("Received run request, pdb=%s, seed=%d", config.PDBID, config.Seed)
 			body, err = s.runExperiment(config)
 			if err != nil {
 				return err

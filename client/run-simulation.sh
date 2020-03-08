@@ -9,9 +9,9 @@ export emtol=$3
 export emstep=$4
 export nsteps=$5
 export dt=$6
+export seed=$7
 
-# generate configs
-#envsubst < ions.mdp.tpl > ions.mdp
+# generate mdp
 envsubst < minim-modified.mdp.tpl > minim-modified.mdp
 
 grep -v HOH $input_path > "${id}_clean.pdb"
