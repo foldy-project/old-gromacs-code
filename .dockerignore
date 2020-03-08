@@ -3,3 +3,4 @@ Dockerfile
 .vscode/
 ./foldy-operator
 test/
+png/

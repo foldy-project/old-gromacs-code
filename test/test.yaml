@@ -10,6 +10,10 @@ spec:
         app: foldy-operator-test
     spec:
       restartPolicy: Never
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+              claimName: foldy-data
       containers:
       - name: foldy-operator-test
         imagePullPolicy: Always
@@ -17,8 +21,11 @@ spec:
         args: ["-run", "TestLangevinSeed"]
         resources:
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "4096Mi"
+            cpu: "2000m"
+        volumeMounts:
+          - name: data
+            mountPath: /data
         env:
           - name: FOLDY_OPERATOR
             value: foldy-operator:8090

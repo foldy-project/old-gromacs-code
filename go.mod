@@ -16,7 +16,10 @@ require (
 	github.com/emicklei/go-restful v2.11.2+incompatible // indirect
 	github.com/envoyproxy/go-control-plane v0.9.4 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
+	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776 // indirect
+	github.com/fogleman/fauxgl v0.0.0-20200301021140-265867c63064
 	github.com/fogleman/ribbon v0.0.0-20191101191537-568057efb726
+	github.com/fogleman/simplify v0.0.0-20170216171241-d32f302d5046 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200221102942-eb749776b5d7 // indirect
 	github.com/go-openapi/jsonreference v0.19.3 // indirect
@@ -35,6 +38,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mailru/easyjson v0.7.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect

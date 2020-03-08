@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tail-null
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: tail-null
+    spec:
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: foldy-data
+      restartPolicy: Never
+      containers:
+      - name: tail-null
+        imagePullPolicy: Always
+        image: alpine:latest
+        command: ["tail", "-f", "/dev/null"] 
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        volumeMounts:
+        - name: data
+          mountPath: /data

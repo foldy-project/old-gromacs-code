@@ -15,9 +15,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fogleman/fauxgl"
+	"github.com/nfnt/resize"
+
+	"github.com/fogleman/ribbon/pdb"
+	"github.com/fogleman/ribbon/ribbon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thavlik/ribbon/pdb"
+)
+
+const (
+	size  = 2048
+	scale = 4
 )
 
 func TestErrBrokenPDB(t *testing.T) {
@@ -207,7 +216,10 @@ func TestLangevinSeed(t *testing.T) {
 	primary := "GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE"
 	mask := "----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------"
 	t.Run("should be deterministic", func(t *testing.T) {
-		steps := 10
+		require.NoError(t, os.RemoveAll("/data/png"))
+		require.NoError(t, os.Mkdir("/data/png", 0644))
+		var camera *ribbon.Camera
+		steps := 30
 		config, _ := json.Marshal(map[string]interface{}{
 			"pdb_id":   pdbID,
 			"model_id": modelID,
@@ -282,6 +294,26 @@ func TestLangevinSeed(t *testing.T) {
 				numActual++
 			}
 			assert.Equal(t, numKnownResidues, numActual)
+			mesh := ribbon.ModelMesh(model)
+			if camera == nil {
+				m := mesh.BiUnitCube()
+				cam := ribbon.PositionCamera(model, m)
+				camera = &cam
+			} else {
+				mesh.BiUnitCube()
+			}
+			context := fauxgl.NewContext(int(size*scale*camera.Aspect), size*scale)
+			matrix := fauxgl.LookAt(camera.Eye, camera.Center, camera.Up).Perspective(camera.Fovy, camera.Aspect, 1, 100)
+			light := camera.Eye.Sub(camera.Center).Normalize()
+			shader := fauxgl.NewPhongShader(matrix, light, camera.Eye)
+			shader.AmbientColor = fauxgl.Gray(0.3)
+			shader.DiffuseColor = fauxgl.Gray(0.9)
+			context.Shader = shader
+			context.ClearColorBufferWith(fauxgl.HexColor("1D181F"))
+			context.DrawTriangles(mesh.Triangles)
+			image := context.Image()
+			image = resize.Resize(uint(size*camera.Aspect), size, image, resize.Bilinear)
+			require.NoError(t, fauxgl.SavePNG(fmt.Sprintf("/data/png/%s_%d.png", pdbID, i), image))
 		}
 	})
 }

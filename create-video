@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+#kubectl apply -f tail-null.yaml
+#sleep 10s
+#rm -rf png || true
+#pod=$(kubectl get pod -l app=tail-null -o jsonpath="{.items[-1].metadata.name}" --sort-by=.metadata.creationTimestamp)
+#kubectl cp $pod:/data/png png
+cd png
+
+rm video.webm || true
+#ffmpeg -i 4jrn_%02d.png video.webm
+#ffmpeg -i 4jrn_%02d.png -vf "format=gbrp,lenscorrection=cx=0.5:cy=0.5:k1=0.4:k2=0.4,format=yuv420p" video.webm
+ffmpeg -i 4jrn_%02d.png -vf "format=gbrp,format=yuv420p" video.webm
