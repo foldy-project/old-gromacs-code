@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -157,6 +158,7 @@ func TestErrMissingChainID(t *testing.T) {
 
 func untar(t *testing.T, fileName string) {
 	cmd := exec.Command("tar", "-xzvf", fileName)
+	cmd.Dir = filepath.Dir(fileName)
 	cmd.Stderr = os.Stderr
 	require.Nil(t, cmd.Run())
 }
@@ -207,32 +209,60 @@ func TestBasicMinim(t *testing.T) {
 	})
 }
 
+type testSuite struct {
+	pdbID   string
+	modelID int
+	chainID string
+	primary string
+	mask    string
+}
+
 func TestLangevinSeed(t *testing.T) {
 	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
 	require.Truef(t, ok, "missing FOLDY_OPERATOR")
-	pdbID := "4jrn"
-	modelID := 1
-	chainID := "A"
-	primary := "GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE"
-	mask := "----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------"
+	//suite := &testSuite{
+	//	pdbID:   "4jrn",
+	//	modelID: 1,
+	//	chainID: "A",
+	//	primary: "GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE",
+	//	mask:    "----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------",
+	//}
+	//suite := &testSuite{
+	//	pdbID:   "2yo0",
+	//	modelID: 1,
+	//	chainID: "A",
+	//	primary: "MKQIEDKIEEILSKIYHIENEIARIKKLIQNAIGAVTTTPTKYYHANSTEEDSLAVGTDSLAMGAKTIVNADAGIGIGLNTLVMADAINGIAIGSNARANHANSIAMGNGSQTTRGAQTDYTAYNMDTPQNSVGEFSVGSEDGQRQITNVAAGSADTDAVNVGQLKVTDAQVSRNTQSITNLNTQVSNLDTRVTNIENGIGDIVTTGSTKYFKTNTDGADANAQGADSVAIGSGSIAAAENSVALGTNSVADEANTVSVGSSTQQRRITNVAAGVNNTDAVNVAQMKQIEDKIEEILSKIYHIENEIARIKKLIKLHHHHHH",
+	//	mask:    "-----------------------------------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-----",
+	//}
+	suite := &testSuite{
+		pdbID:   "2l0e",
+		modelID: 1,
+		chainID: "A",
+		primary: "AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA",
+		mask:    "-+++++++++++++++++++++++++++++++-",
+	}
+	require.NoError(t, os.RemoveAll("/data/tmp"))
+	require.NoError(t, os.Mkdir("/data/tmp", 0644))
+	require.NoError(t, os.RemoveAll("/data/png"))
+	require.NoError(t, os.Mkdir("/data/png", 0644))
 	t.Run("should be deterministic", func(t *testing.T) {
-		require.NoError(t, os.RemoveAll("/data/png"))
-		require.NoError(t, os.Mkdir("/data/png", 0644))
+		require.NoError(t, os.Mkdir(fmt.Sprintf("/data/png/%s", suite.pdbID), 0644))
+		var context *fauxgl.Context
 		var camera *ribbon.Camera
-		steps := 30
+		steps := 100
 		config, _ := json.Marshal(map[string]interface{}{
-			"pdb_id":   pdbID,
-			"model_id": modelID,
-			"chain_id": chainID,
-			"primary":  primary,
-			"mask":     mask,
+			"pdb_id":   suite.pdbID,
+			"model_id": suite.modelID,
+			"chain_id": suite.chainID,
+			"primary":  suite.primary,
+			"mask":     suite.mask,
 			"steps":    steps,
 			"seed":     1,
 		})
 		url := fmt.Sprintf("http://%s/run", foldyOperator)
 		req, err := http.NewRequest("POST", url, bytes.NewReader(config))
 		require.NoError(t, err)
-		cl := http.Client{Timeout: time.Minute * 3}
+		cl := http.Client{Timeout: time.Minute * 20}
 		resp, err := cl.Do(req)
 		require.NoError(t, err)
 		if resp.StatusCode != 200 {
@@ -241,11 +271,8 @@ func TestLangevinSeed(t *testing.T) {
 		}
 		require.Equal(t, resp.StatusCode, 200)
 		defer resp.Body.Close()
-		f, err := ioutil.TempFile("/tmp", "result-*.tar.gz")
+		f, err := ioutil.TempFile("/data/tmp", "result-*.tar.gz")
 		require.NoError(t, err)
-		defer func() {
-			require.Nil(t, os.Remove(f.Name()))
-		}()
 		_, err = io.Copy(f, resp.Body)
 		require.NoError(t, err)
 		require.Nil(t, f.Close())
@@ -253,16 +280,20 @@ func TestLangevinSeed(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, info.Size(), int64(0))
 		untar(t, f.Name())
-		files, err := listFiles(fmt.Sprintf("%s_minim/", pdbID))
+		require.Nil(t, os.Remove(f.Name()))
+		files, err := listFiles(fmt.Sprintf("/data/tmp/%s_minim/", suite.pdbID))
 		require.NoError(t, err)
 		require.Equal(t, len(files), steps)
 		for i := 0; i < steps; i++ {
-			f, err := os.Open(fmt.Sprintf("%s_minim/%s_minim_%d.pdb", pdbID, pdbID, i))
+			runtime.GC()
+			path := fmt.Sprintf("/data/tmp/%s_minim/%s_minim_%d.pdb", suite.pdbID, suite.pdbID, i)
+			f, err := os.Open(path)
 			require.NoError(t, err)
-			defer f.Close()
 			r := pdb.NewReader(f)
 			models, err := r.ReadAll()
 			require.NoError(t, err)
+			require.NoError(t, f.Close())
+			require.Nil(t, os.Remove(path))
 			//for modelID, model := range models {
 			//	log.Printf("modelID=%v", modelID)
 			//	for _, chain := range model.Chains {
@@ -281,8 +312,8 @@ func TestLangevinSeed(t *testing.T) {
 			assert.Equal(t, 1, len(model.Chains))
 			chain := model.Chains[0]
 			numKnownResidues := 0
-			for c := 0; c < len(mask); c++ {
-				if mask[c] == '+' {
+			for c := 0; c < len(suite.mask); c++ {
+				if suite.mask[c] == '+' {
 					numKnownResidues++
 				}
 			}
@@ -302,7 +333,7 @@ func TestLangevinSeed(t *testing.T) {
 			} else {
 				mesh.BiUnitCube()
 			}
-			context := fauxgl.NewContext(int(size*scale*camera.Aspect), size*scale)
+			context = fauxgl.NewContext(int(size*scale*camera.Aspect), size*scale)
 			matrix := fauxgl.LookAt(camera.Eye, camera.Center, camera.Up).Perspective(camera.Fovy, camera.Aspect, 1, 100)
 			light := camera.Eye.Sub(camera.Center).Normalize()
 			shader := fauxgl.NewPhongShader(matrix, light, camera.Eye)
@@ -313,7 +344,7 @@ func TestLangevinSeed(t *testing.T) {
 			context.DrawTriangles(mesh.Triangles)
 			image := context.Image()
 			image = resize.Resize(uint(size*camera.Aspect), size, image, resize.Bilinear)
-			require.NoError(t, fauxgl.SavePNG(fmt.Sprintf("/data/png/%s_%d.png", pdbID, i), image))
+			require.NoError(t, fauxgl.SavePNG(fmt.Sprintf("/data/png/%s/%s_%d.png", suite.pdbID, suite.pdbID, i), image))
 		}
 	})
 }

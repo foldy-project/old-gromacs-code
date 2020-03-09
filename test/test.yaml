@@ -21,8 +21,8 @@ spec:
         args: ["-run", "TestLangevinSeed"]
         resources:
           limits:
-            memory: "4096Mi"
-            cpu: "2000m"
+            memory: "5200Mi"
+            cpu: "1000m"
         volumeMounts:
           - name: data
             mountPath: /data

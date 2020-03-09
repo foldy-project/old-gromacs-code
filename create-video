@@ -1,13 +1,15 @@
 #!/bin/bash
 set -euo pipefail
-#kubectl apply -f tail-null.yaml
-#sleep 10s
-#rm -rf png || true
-#pod=$(kubectl get pod -l app=tail-null -o jsonpath="{.items[-1].metadata.name}" --sort-by=.metadata.creationTimestamp)
-#kubectl cp $pod:/data/png png
-cd png
+pdb_id=$1
+out_dir=$(pwd)
 
-rm video.webm || true
+rm -rf png/${pdb_id} || true
+pod=$(kubectl get pod -l app=tail-null -o jsonpath="{.items[-1].metadata.name}" --sort-by=.metadata.creationTimestamp)
+kubectl cp ${pod}:/data/png/${pdb_id} png/${pdb_id}
+cd png/${pdb_id}
+
+rm ${pdb_id}.webm || true
 #ffmpeg -i 4jrn_%02d.png video.webm
 #ffmpeg -i 4jrn_%02d.png -vf "format=gbrp,lenscorrection=cx=0.5:cy=0.5:k1=0.4:k2=0.4,format=yuv420p" video.webm
-ffmpeg -i 4jrn_%02d.png -vf "format=gbrp,format=yuv420p" video.webm
+ffmpeg -framerate 15 -i ${pdb_id}_%d.png -vf "format=gbrp,format=yuv420p" ${pdb_id}.webm
+mv ${pdb_id}.webm $out_dir
