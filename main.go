@@ -222,7 +222,7 @@ func newServer() (*server, error) {
 		foldyOperatorAddress:  "foldy-operator:8090",
 		clientset:             clientset,
 		requests:              make(map[string]chan<- interface{}),
-		timeout:               time.Minute * 15,
+		timeout:               time.Minute * 240,
 		handler:               handler,
 		redis:                 client,
 		exit:                  exit,

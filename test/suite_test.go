@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -217,7 +218,7 @@ type testSuite struct {
 	mask    string
 }
 
-func TestLangevinSeed(t *testing.T) {
+func TestCreateVideo(t *testing.T) {
 	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
 	require.Truef(t, ok, "missing FOLDY_OPERATOR")
 	//suite := &testSuite{
@@ -234,35 +235,73 @@ func TestLangevinSeed(t *testing.T) {
 	//	primary: "MKQIEDKIEEILSKIYHIENEIARIKKLIQNAIGAVTTTPTKYYHANSTEEDSLAVGTDSLAMGAKTIVNADAGIGIGLNTLVMADAINGIAIGSNARANHANSIAMGNGSQTTRGAQTDYTAYNMDTPQNSVGEFSVGSEDGQRQITNVAAGSADTDAVNVGQLKVTDAQVSRNTQSITNLNTQVSNLDTRVTNIENGIGDIVTTGSTKYFKTNTDGADANAQGADSVAIGSGSIAAAENSVALGTNSVADEANTVSVGSSTQQRRITNVAAGVNNTDAVNVAQMKQIEDKIEEILSKIYHIENEIARIKKLIKLHHHHHH",
 	//	mask:    "-----------------------------------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-----",
 	//}
+
+	var primary, chainID, mask string
+	var modelID int
+	pdbID, ok := os.LookupEnv("PDB_ID")
+	if ok {
+		// Specify overrides using environment variables
+		pdbID = strings.ToLower(pdbID)
+		modelIDStr, ok := os.LookupEnv("MODEL_ID")
+		require.True(t, ok)
+		modelIDV, err := strconv.ParseInt(modelIDStr, 10, 64)
+		require.NoError(t, err)
+		modelID = int(modelIDV)
+		chainID, ok = os.LookupEnv("CHAIN_ID")
+		require.True(t, ok)
+		primary, ok = os.LookupEnv("PRIMARY")
+		require.True(t, ok)
+		mask, ok = os.LookupEnv("MASK")
+		require.True(t, ok)
+		log.Printf("Using custom PDB %v_%v_%v", pdbID, modelID, chainID)
+	} else {
+		// Default is 2l0e - a short chain with residues
+		// missing only at the ends
+		pdbID = "2l0e"
+		chainID = "A"
+		modelID = 1
+		primary = "AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA"
+		mask = "-+++++++++++++++++++++++++++++++-"
+	}
+
 	suite := &testSuite{
 		pdbID:   "2l0e",
-		modelID: 1,
-		chainID: "A",
-		primary: "AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA",
-		mask:    "-+++++++++++++++++++++++++++++++-",
+		modelID: modelID,
+		chainID: chainID,
+		primary: primary,
+		mask:    mask,
 	}
 	require.NoError(t, os.RemoveAll("/data/tmp"))
 	require.NoError(t, os.Mkdir("/data/tmp", 0644))
 	require.NoError(t, os.RemoveAll("/data/png"))
 	require.NoError(t, os.Mkdir("/data/png", 0644))
+
+	nsteps := 100
+	stepsStr, ok := os.LookupEnv("NSTEPS")
+	if ok {
+		stepsV, err := strconv.ParseInt(stepsStr, 10, 64)
+		require.NoError(t, err)
+		nsteps = int(stepsV)
+	}
+	log.Printf("Simulating for %v steps", nsteps)
+
 	t.Run("should be deterministic", func(t *testing.T) {
 		require.NoError(t, os.Mkdir(fmt.Sprintf("/data/png/%s", suite.pdbID), 0644))
 		var context *fauxgl.Context
 		var camera *ribbon.Camera
-		steps := 100
 		config, _ := json.Marshal(map[string]interface{}{
 			"pdb_id":   suite.pdbID,
 			"model_id": suite.modelID,
 			"chain_id": suite.chainID,
 			"primary":  suite.primary,
 			"mask":     suite.mask,
-			"steps":    steps,
+			"steps":    nsteps,
 			"seed":     1,
 		})
 		url := fmt.Sprintf("http://%s/run", foldyOperator)
 		req, err := http.NewRequest("POST", url, bytes.NewReader(config))
 		require.NoError(t, err)
-		cl := http.Client{Timeout: time.Minute * 20}
+		cl := http.Client{Timeout: time.Minute * 10000}
 		resp, err := cl.Do(req)
 		require.NoError(t, err)
 		if resp.StatusCode != 200 {
@@ -283,8 +322,8 @@ func TestLangevinSeed(t *testing.T) {
 		require.Nil(t, os.Remove(f.Name()))
 		files, err := listFiles(fmt.Sprintf("/data/tmp/%s_minim/", suite.pdbID))
 		require.NoError(t, err)
-		require.Equal(t, len(files), steps)
-		for i := 0; i < steps; i++ {
+		require.Equal(t, len(files), nsteps)
+		for i := 0; i < nsteps; i++ {
 			runtime.GC()
 			path := fmt.Sprintf("/data/tmp/%s_minim/%s_minim_%d.pdb", suite.pdbID, suite.pdbID, i)
 			f, err := os.Open(path)

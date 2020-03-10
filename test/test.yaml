@@ -18,11 +18,11 @@ spec:
       - name: foldy-operator-test
         imagePullPolicy: Always
         image: thavlik/foldy-operator-test:latest
-        args: ["-run", "TestLangevinSeed"]
+        args: ["-run", "TestCreateVideo"]
         resources:
           limits:
-            memory: "5200Mi"
-            cpu: "1000m"
+            memory: "4096Mi"
+            cpu: "2000m"
         volumeMounts:
           - name: data
             mountPath: /data
@@ -30,7 +30,7 @@ spec:
           - name: FOLDY_OPERATOR
             value: foldy-operator:8090
           - name: TIMEOUT
-            value: 240s
+            value: 12h
           - name: CONCURRENCY
             value: '1'
             

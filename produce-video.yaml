@@ -1,0 +1,134 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: create-video-
+spec:
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: pdb
+        value: 2l0e
+      - name: model
+        value: 1
+      - name: chain
+        value: A
+      - name: frames
+        value: 20
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: foldy-data
+    - name: aws-cred
+      secret:
+        secretName: aws-cred
+  templates:
+    - name: main
+      inputs:
+        parameters:
+          - name: pdb
+          - name: model
+          - name: chain
+          - name: frames
+      steps:
+        #- - name: simulate
+        #    template: simulate
+        #    arguments:
+        #      parameters:
+        #        - name: pdb
+        #          value: "{{inputs.parameters.pdb}}"
+        #        - name: model
+        #          value: "{{inputs.parameters.model}}"
+        #        - name: chain
+        #          value: "{{inputs.parameters.chain}}"
+        #        - name: nsteps
+        #          value: "{{inputs.parameters.nsteps}}"
+        #- - name: encode-video
+        #    template: encode-video
+        #    arguments:
+        #      parameters:
+        #        - name: pdb
+        #          value: "{{inputs.parameters.pdb}}"
+        - - name: upload
+            template: upload
+            arguments:
+              parameters:
+                - name: pdb
+                  value: "{{inputs.parameters.pdb}}"
+    - name: simulate
+      inputs:
+        parameters:
+          - name: pdb
+          - name: model
+          - name: chain
+          - name: nsteps
+      container:
+        imagePullPolicy: Always
+        image: thavlik/foldy-operator-test:latest
+        args: ["-run", "TestCreateVideo"]
+        resources:
+          limits:
+            memory: "4096Mi"
+            cpu: "2000m"
+        volumeMounts:
+          - name: data
+            mountPath: /data
+        env:
+          - name: FOLDY_OPERATOR
+            value: foldy-operator:8090
+          - name: TIMEOUT
+            value: 12h
+          - name: CONCURRENCY
+            value: "1"
+          - name: NSTEPS
+            value: "{{inputs.parameters.nsteps}}"
+          - name: PDB_ID
+            value: "{{inputs.parameters.pdb}}"
+          - name: MODEL_ID
+            value: "{{inputs.parameters.model}}"
+          - name: CHAIN_ID
+            value: "{{inputs.parameters.chain}}"
+          - name: PRIMARY
+            value: "AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA"
+          - name: MASK
+            value: "-+++++++++++++++++++++++++++++++-"
+
+    - name: encode-video
+      inputs:
+        parameters:
+          - name: pdb
+      container:
+        imagePullPolicy: Always
+        image: thavlik/video-encoder:latest
+        args: ["{{inputs.parameters.pdb}}"]
+        resources:
+          limits:
+            memory: "2048Mi"
+            cpu: "1000m"
+        volumeMounts:
+          - name: data
+            mountPath: /data
+    - name: upload
+      inputs:
+        parameters:
+          - name: pdb
+      container:
+        image: thavlik/awscli:latest
+        args:
+          [
+            aws,
+            s3,
+            --endpoint,
+            https://sfo2.digitaloceanspaces.com,
+            cp,
+            "/data/png/{{inputs.parameters.pdb}}/{{inputs.parameters.pdb}}.mp4",
+            "s3://pdb/{{inputs.parameters.pdb}}.mp4",
+          ]
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+          - name: data
+            mountPath: /data
+          - name: aws-cred
+            mountPath: /root/.aws
