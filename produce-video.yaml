@@ -30,24 +30,24 @@ spec:
           - name: chain
           - name: frames
       steps:
-        #- - name: simulate
-        #    template: simulate
-        #    arguments:
-        #      parameters:
-        #        - name: pdb
-        #          value: "{{inputs.parameters.pdb}}"
-        #        - name: model
-        #          value: "{{inputs.parameters.model}}"
-        #        - name: chain
-        #          value: "{{inputs.parameters.chain}}"
-        #        - name: nsteps
-        #          value: "{{inputs.parameters.nsteps}}"
-        #- - name: encode-video
-        #    template: encode-video
-        #    arguments:
-        #      parameters:
-        #        - name: pdb
-        #          value: "{{inputs.parameters.pdb}}"
+        - - name: simulate
+            template: simulate
+            arguments:
+              parameters:
+                - name: pdb
+                  value: "{{inputs.parameters.pdb}}"
+                - name: model
+                  value: "{{inputs.parameters.model}}"
+                - name: chain
+                  value: "{{inputs.parameters.chain}}"
+                - name: nsteps
+                  value: "{{inputs.parameters.nsteps}}"
+        - - name: encode-video
+            template: encode-video
+            arguments:
+              parameters:
+                - name: pdb
+                  value: "{{inputs.parameters.pdb}}"
         - - name: upload
             template: upload
             arguments:
