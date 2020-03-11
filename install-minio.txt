@@ -1,0 +1,4 @@
+helm install argo-artifacts stable/minio \
+-n argo \
+--set service.type=ClusterIP \
+--set fullnameOverride=argo-artifacts

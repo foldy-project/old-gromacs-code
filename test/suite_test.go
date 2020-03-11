@@ -24,6 +24,7 @@ import (
 	"github.com/fogleman/ribbon/ribbon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thavlik/foldy-operator/proteinnet"
 )
 
 const (
@@ -218,6 +219,36 @@ type testSuite struct {
 	mask    string
 }
 
+func getBatchFromProteinNet(t *testing.T, r io.Reader) []*proteinnet.Record {
+	batchSize := 5
+	if batchSizeStr, ok := os.LookupEnv("BATCH_SIZE"); ok {
+		batchSizeV, err := strconv.ParseInt(batchSizeStr, 10, 64)
+		require.NoError(t, err)
+		batchSize = int(batchSizeV)
+	}
+	results := make(chan *proteinnet.Record)
+	stop := make(chan int)
+	defer func() {
+		stop <- 0
+		close(stop)
+	}()
+	proteinnet.ReadRecords(r, results, stop)
+	suites := make([]*proteinnet.Record, batchSize, batchSize)
+	for i := 0; i < batchSize; i++ {
+		suites[i] = <-results
+	}
+	return suites
+}
+
+func trimQuotes(s string) string {
+	if len(s) >= 2 {
+		if s[0] == '"' && s[len(s)-1] == '"' {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
 func TestCreateVideo(t *testing.T) {
 	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
 	require.Truef(t, ok, "missing FOLDY_OPERATOR")
@@ -241,17 +272,21 @@ func TestCreateVideo(t *testing.T) {
 	pdbID, ok := os.LookupEnv("PDB_ID")
 	if ok {
 		// Specify overrides using environment variables
-		pdbID = strings.ToLower(pdbID)
+		pdbID = strings.ToLower(trimQuotes(pdbID))
 		modelIDStr, ok := os.LookupEnv("MODEL_ID")
 		require.True(t, ok)
+		modelIDStr = trimQuotes(modelIDStr)
 		modelIDV, err := strconv.ParseInt(modelIDStr, 10, 64)
 		require.NoError(t, err)
 		modelID = int(modelIDV)
 		chainID, ok = os.LookupEnv("CHAIN_ID")
 		require.True(t, ok)
+		chainID = trimQuotes(chainID)
 		primary, ok = os.LookupEnv("PRIMARY")
 		require.True(t, ok)
+		primary = trimQuotes(primary)
 		mask, ok = os.LookupEnv("MASK")
+		mask = trimQuotes(mask)
 		require.True(t, ok)
 		log.Printf("Using custom PDB %v_%v_%v", pdbID, modelID, chainID)
 	} else {
@@ -265,7 +300,7 @@ func TestCreateVideo(t *testing.T) {
 	}
 
 	suite := &testSuite{
-		pdbID:   "2l0e",
+		pdbID:   pdbID,
 		modelID: modelID,
 		chainID: chainID,
 		primary: primary,
@@ -282,8 +317,8 @@ func TestCreateVideo(t *testing.T) {
 		stepsV, err := strconv.ParseInt(stepsStr, 10, 64)
 		require.NoError(t, err)
 		nsteps = int(stepsV)
+		log.Printf("Simulating for %v steps", nsteps)
 	}
-	log.Printf("Simulating for %v steps", nsteps)
 
 	t.Run("should be deterministic", func(t *testing.T) {
 		require.NoError(t, os.Mkdir(fmt.Sprintf("/data/png/%s", suite.pdbID), 0644))
@@ -325,6 +360,7 @@ func TestCreateVideo(t *testing.T) {
 		require.Equal(t, len(files), nsteps)
 		for i := 0; i < nsteps; i++ {
 			runtime.GC()
+			log.Printf("Rendering frame %d", i)
 			path := fmt.Sprintf("/data/tmp/%s_minim/%s_minim_%d.pdb", suite.pdbID, suite.pdbID, i)
 			f, err := os.Open(path)
 			require.NoError(t, err)
@@ -386,6 +422,130 @@ func TestCreateVideo(t *testing.T) {
 			require.NoError(t, fauxgl.SavePNG(fmt.Sprintf("/data/png/%s/%s_%d.png", suite.pdbID, suite.pdbID, i), image))
 		}
 	})
+}
+
+func TestLangevinSeed(t *testing.T) {
+	foldyOperator, ok := os.LookupEnv("FOLDY_OPERATOR")
+	require.Truef(t, ok, "missing FOLDY_OPERATOR")
+	suite := &testSuite{
+		pdbID:   "2l0e",
+		chainID: "A",
+		modelID: 1,
+		primary: "AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA",
+		mask:    "-+++++++++++++++++++++++++++++++-",
+	}
+	nsteps := 3
+	stepsStr, ok := os.LookupEnv("NSTEPS")
+	if ok {
+		stepsV, err := strconv.ParseInt(stepsStr, 10, 64)
+		require.NoError(t, err)
+		nsteps = int(stepsV)
+		log.Printf("Simulating for %v steps", nsteps)
+	}
+	numSamples := 3
+	require.NoError(t, os.RemoveAll("/data/tmp"))
+	require.NoError(t, os.MkdirAll("/data/tmp", 0644))
+	compareSteps := make([][]*pdb.Residue, numSamples, numSamples)
+	for sample := 0; sample < numSamples; sample++ {
+		done := make(chan int, 1)
+		go func(sample int, done chan<- int) {
+			t.Run(fmt.Sprintf("sample %d", sample), func(t *testing.T) {
+				defer func() {
+					done <- 0
+					close(done)
+				}()
+				config, _ := json.Marshal(map[string]interface{}{
+					"pdb_id":   suite.pdbID,
+					"model_id": suite.modelID,
+					"chain_id": suite.chainID,
+					"primary":  suite.primary,
+					"mask":     suite.mask,
+					"steps":    nsteps,
+					"seed":     1,
+				})
+				url := fmt.Sprintf("http://%s/run", foldyOperator)
+				req, err := http.NewRequest("POST", url, bytes.NewReader(config))
+				require.NoError(t, err)
+				cl := http.Client{Timeout: time.Minute * 10000}
+				resp, err := cl.Do(req)
+				require.NoError(t, err)
+				if resp.StatusCode != 200 {
+					msg, _ := ioutil.ReadAll(resp.Body)
+					log.Printf("%v", string(msg))
+				}
+				require.Equal(t, resp.StatusCode, 200)
+				defer resp.Body.Close()
+				f, err := ioutil.TempFile("/data/tmp", "result-*.tar.gz")
+				require.NoError(t, err)
+				_, err = io.Copy(f, resp.Body)
+				require.NoError(t, err)
+				require.Nil(t, f.Close())
+				info, err := os.Stat(f.Name())
+				require.NoError(t, err)
+				require.Greater(t, info.Size(), int64(0))
+				untar(t, f.Name())
+				require.NoError(t, os.Remove(f.Name()))
+				require.NoError(t, os.Rename(
+					fmt.Sprintf("/data/tmp/%s_minim/", suite.pdbID),
+					fmt.Sprintf("/data/tmp/%s_minim_%d/", suite.pdbID, sample)))
+				files, err := listFiles(fmt.Sprintf("/data/tmp/%s_minim_%d/", suite.pdbID, sample))
+				require.NoError(t, err)
+				require.Equal(t, len(files), nsteps)
+				for i := 0; i < nsteps; i++ {
+					runtime.GC()
+					path := fmt.Sprintf("/data/tmp/%s_minim_%d/%s_minim_%d.pdb", suite.pdbID, sample, suite.pdbID, i)
+					f, err := os.Open(path)
+					require.NoError(t, err)
+					r := pdb.NewReader(f)
+					models, err := r.ReadAll()
+					require.NoError(t, err)
+					require.NoError(t, f.Close())
+					require.Nil(t, os.Remove(path))
+					assert.Equal(t, 1, len(models))
+					model := models[0]
+					assert.Equal(t, 1, len(model.Chains))
+					chain := model.Chains[0]
+					numKnownResidues := 0
+					for c := 0; c < len(suite.mask); c++ {
+						if suite.mask[c] == '+' {
+							numKnownResidues++
+						}
+					}
+					numActual := 0
+					for _, residue := range chain.Residues {
+						if residue.ResName == "SOL" {
+							break
+						}
+						numActual++
+					}
+					assert.Equal(t, numKnownResidues, numActual)
+					compareResidues := compareSteps[sample]
+					if compareSteps[sample] == nil {
+						compareSteps[sample] = chain.Residues
+					} else {
+						require.Equal(t, len(compareResidues), len(chain.Residues))
+						chainNorm := 0.0
+						for j, residue := range chain.Residues {
+							compareResidue := compareResidues[j]
+							residueNorm := 0.0
+							for k, atom := range residue.Atoms {
+								compareAtom := compareResidue.Atoms[k]
+								dx := compareAtom.X - atom.X
+								dy := compareAtom.Y - atom.Y
+								dz := compareAtom.Z - atom.Z
+								norm := dx*dx + dy*dy + dz*dz
+								residueNorm += norm
+							}
+							assert.Lessf(t, residueNorm, 0.1, "sample %d, step %d, residue %d (%s)", sample, i, j, residue.ResName)
+							chainNorm += residueNorm
+						}
+						assert.Lessf(t, chainNorm, 1.0, "sample %d chain norm", sample)
+					}
+				}
+			})
+		}(sample, done)
+		<-done
+	}
 }
 
 /*func TestConfiguredMinim(t *testing.T) {

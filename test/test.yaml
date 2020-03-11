@@ -21,7 +21,7 @@ spec:
         args: ["-run", "TestCreateVideo"]
         resources:
           limits:
-            memory: "4096Mi"
+            memory: "2Gi"
             cpu: "2000m"
         volumeMounts:
           - name: data
@@ -33,4 +33,12 @@ spec:
             value: 12h
           - name: CONCURRENCY
             value: '1'
+          - name: PDB_ID
+            value: 4a5u
+          - name: MODEL_ID
+            value: "1"
+          - name: PRIMARY
+            value: MHHHHHHGSSQLLPAPLTNDPTAIGPVLPFEELHPRRYPENTATFLTRLRSLPSNHLPQPTLNCLLSAVSDQTKVSEEHLWESLQTILPDSQLSNEETNTLGLSTEHLTALAHLYNFQATVYSDRGPILFGPSDTIKRIDITHTTGPPSHFSPGKRLLGS
+          - name: MASK
+            value: ------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             

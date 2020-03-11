@@ -161,8 +161,8 @@ def normalize_structure(input_path: str,
 
             # ensure the sequence lengths match
             if len(abbrev) != len(known_primary):
-                raise ValueError('length of normalized chain ({}) not match supplied primary sequence ({})'.format(
-                    len(abbrev), len(known_primary)))
+                raise ValueError('length of normalized chain ({} residues, {}) not match supplied primary sequence ({} residues, {})'.format(
+                    len(abbrev), abbrev, len(known_primary), known_primary))
             # ensure residue identities match
             for i, (got, expected) in enumerate(zip(abbrev, known_primary)):
                 if got != expected:

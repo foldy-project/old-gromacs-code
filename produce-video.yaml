@@ -3,17 +3,33 @@ kind: Workflow
 metadata:
   generateName: create-video-
 spec:
-  entrypoint: main
+  entrypoint: all
   arguments:
     parameters:
       - name: pdb
-        value: 2l0e
+        value: 1y7y
+        #value: 3fg2
+        #value: 2l0e
+        #value: 3qc7
+        #value: 2yo0
       - name: model
         value: 1
       - name: chain
         value: A
-      - name: frames
-        value: 20
+      - name: primary
+        value: MQSHHDHYADLVKFGQRLRELRTAKGLSQETLAFLSGLDRSYVGGVERGQRNVSLVNILKLATALDIEPRELFC
+        #value: NDTVLIAGAGHAGFQVAVSLRQAKYPGRIALINDEKHLPYQRPPLSKAYLKSGGDPNSLMFRPEKFFQDQAIELISDRMVSIDREGRKLLLASGTAIEYGHLVLATGARNRMLDVPNASLPDVLYLRTLDESEVLRQRMPDKKHVVVIGAGFIGLEFAATARAKGLEVDVVELAPRVMARVVTPEISSYFHDRHSGAGIRMHYGVRATEIAAEGDRVTGVVLSDGNTLPCDLVVVGVGVIPNVEIAAAAGLPTAAGIIVDQQLLTSDPHISAIGDCALFESVRFGETMRVESVQNATDQARCVAARLTGDAKPYDGYPWFWSDQGDDKLQIVGLTAGFDQVVIRGSVAERSFSAFCYKAGKLIGIESVNRAADHVFGRKILPLDKSVTPEQAADLSFDLKKAAA
+        #value: AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA
+        #value: LVISRSKEISIEVEDIKDAGDTGKRLLKINTPSGARNIIIENEDAKALINGETTNTNKKNLQDLLFSDGNVKAFLQATTTDENKTALQQLLVSNADVLGLLSGNPTSDNKINLRTMIGAGVPYSLPAATTTTLGGVKKGAAVTASTATDVATAVKDLNSLITVLKNAGIISLEHHHHHH
+        #value: MKQIEDKIEEILSKIYHIENEIARIKKLIQNAIGAVTTTPTKYYHANSTEEDSLAVGTDSLAMGAKTIVNADAGIGIGLNTLVMADAINGIAIGSNARANHANSIAMGNGSQTTRGAQTDYTAYNMDTPQNSVGEFSVGSEDGQRQITNVAAGSADTDAVNVGQLKVTDAQVSRNTQSITNLNTQVSNLDTRVTNIENGIGDIVTTGSTKYFKTNTDGADANAQGADSVAIGSGSIAAAENSVALGTNSVADEANTVSVGSSTQQRRITNVAAGVNNTDAVNVAQMKQIEDKIEEILSKIYHIENEIARIKKLIKLHHHHHH
+      - name: mask
+        value: ----+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+        #value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #value: -+++++++++++++++++++++++++++++++-
+        #value: --------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-------
+        #value: -----------------------------------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-----
+      - name: nsteps
+        value: 210
   volumes:
     - name: data
       persistentVolumeClaim:
@@ -22,13 +38,178 @@ spec:
       secret:
         secretName: aws-cred
   templates:
+    - name: all
+      inputs:
+        parameters:
+          - name: nsteps
+      steps:
+        #- - name: 1ete
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 1ete
+        #      - name: primary
+        #        value: TQDCSFQHSPISSDFAVKIRELSDYLLQDYPVTVASNLQDDELCGGLWRLVLAQRWMERLKTVAGSKMQGLLERVNTEIHFVTKCAFQPPPSCLRFVQTNISRLLQETSEQLVALKPWITRQNFSRCLELQCQP
+        #      - name: mask
+        #        value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 1gyx
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 1gyx
+        #      - name: primary
+        #        value: PHIDIKCFPRELDEQQKAALAADITDVIIRHLNSKDSSISIALQQIQPESWQAIWDAEIAPQMEALIKKPGYSMNA
+        #      - name: mask
+        #        value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 2hm6
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 2hm6
+        #      - name: primary
+        #        value: GSQITGTCPSVCSGDCYPECPPGCCGQVNLN
+        #      - name: mask
+        #        value: +++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 2iay
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 2iay
+        #      - name: primary
+        #        value: GMAYTTTVKLDGDTKTYTLSPTVKKYTLMDLGFVKGRSGAFSFERSLDPTSPYQAAFKLKMTVNADLTGFKMTTVTGNGVQRANIFKNDAHPEAVEQLRYILANFIERDILTTD
+        #      - name: mask
+        #        value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 2lzj
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 2lzj
+        #      - name: primary
+        #        value: EFGEEMVLTDSNGEQPLSAMVSMVTKDNPGVVTCLDEARHGFETGDFVSFSEVQGMIQLNGCQPMEIKVLGPYTFSICDTSNFSDYIRGGIVSQVKVPKKISFKSLPASLVE
+        #      - name: mask
+        #        value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 2scp
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 2scp
+        #      - name: primary
+        #        value: SDLWVQKMKTYFNRIDFDKDGAITRMDFESMAERFAKESEMKAEHAKVLMDSLTGVWDNFLTAVAGGKGIDETTFINSMKEMVKNPEAKSVVEGPLPLFFRAVDTNEDNNISRDEYGIFFGMLGLDKTMAPASFDAIDTNNDGLLSLEEFVIAGSDFFMNDGDSTNKVFWGPLV
+        #      - name: mask
+        #        value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 3fg2
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 3fg2
+        #      - name: primary
+        #        value: NDTVLIAGAGHAGFQVAVSLRQAKYPGRIALINDEKHLPYQRPPLSKAYLKSGGDPNSLMFRPEKFFQDQAIELISDRMVSIDREGRKLLLASGTAIEYGHLVLATGARNRMLDVPNASLPDVLYLRTLDESEVLRQRMPDKKHVVVIGAGFIGLEFAATARAKGLEVDVVELAPRVMARVVTPEISSYFHDRHSGAGIRMHYGVRATEIAAEGDRVTGVVLSDGNTLPCDLVVVGVGVIPNVEIAAAAGLPTAAGIIVDQQLLTSDPHISAIGDCALFESVRFGETMRVESVQNATDQARCVAARLTGDAKPYDGYPWFWSDQGDDKLQIVGLTAGFDQVVIRGSVAERSFSAFCYKAGKLIGIESVNRAADHVFGRKILPLDKSVTPEQAADLSFDLKKAAA
+        #      - name: mask
+        #        value: ----+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 3hn5
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 3hn5
+        #      - name: primary
+        #        value: GMKDNYDAPESMLTGRVMYNGEALQLRGNEAVQLQLYQHGYAKHDPINVYVNQDGMYSANLFDGEYQMITKSGNGPWTSEGRDTINVTVAGNTVQDVEVTPYYLVRDAQMTLEGNKVNASFKVEKVAGGGIDRVFFMLSTTQFVNDAEHNVDRYDETDNLDAYDETGKLYTFATRDYTDNSMFQTALKRGTLFGRICIWPKGSDQGIYSKVIRLK
+        #      - name: mask
+        #        value: ---------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 3hty
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 3hty
+        #      - name: primary
+        #        value: GASIVGSWVEPVPGLEGQVQGIKMEEGGVASSVNMATLVYESWKQEGTKLILTGKSIGNGQTIEFVDTMDIKRLTADSLVLDNQGMEIRYAKQK
+        #      - name: mask
+        #        value: ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 3imh
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 3imh
+        #      - name: primary
+        #        value: MSLKTNFVKYERKDNKDLCEITLENDAGMAVKVLNYGATLEKVLLDGENMILSLNSPEDYSKERNFLGGTVGRIAGRVRAGQWKHGNEIHQLPLNDGDNHIHGGIGTDMHVWDFRPSCDSEHARVDLTLFDPDGNNDYPGNLKLHARYELDNENNLHYLLEAVSDKLTIFNPVNHTYFNLGERAEDLNLQMNADYYLPVDEAGLPDRGMAEVAGTAFDFRKTKRIGDALNSDDSQIKLRNGLDHPFILNGNNPAALLSSNKHRLIVKTNAPALVLYAGNHFNHTGIVNNIGQYDGITFEAQCPPAEGNDLGQITLLPFEKFKRTVDWKFEEGHHHHHH
+        #      - name: mask
+        #        value: -++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-----
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 4a5u
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 4a5u
+        #      - name: primary
+        #        value: MHHHHHHGSSQLLPAPLTNDPTAIGPVLPFEELHPRRYPENTATFLTRLRSLPSNHLPQPTLNCLLSAVSDQTKVSEEHLWESLQTILPDSQLSNEETNTLGLSTEHLTALAHLYNFQATVYSDRGPILFGPSDTIKRIDITHTTGPPSHFSPGKRLLGS
+        #      - name: mask
+        #        value: ------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        #- - name: 4fz2
+        #    template: main
+        #    arguments:
+        #      parameters:
+        #      - name: pdb
+        #        value: 4fz2
+        #      - name: primary
+        #        value: MTLLLNINTKAKRISVSDQSTIDILRNGYFGEYRAGKLMLEVEEGLYLVDVRKAACTDENSKPVSFNDIAGVFIKRKKLMARYFTFKDWRDRGLIIKSPGLRFGEEEHVQAKRYPSSAINLKKYSVTGIFFPDDMVTVIDDDESGKDLYENFWLGQYGTYKVSEHGNLNKLDIYETLFLIDMGVISIKNFTRAQIVNIASARRTDIMKLYDVYKDWRTKGYVVKTGFKFGTNFRIYFPGAKPIKENNEWIHSKHVLHVFPRDSKLIISEWARAIRVAHSVRKTFILAIPGKTRKKKLAIDFELYHRRGGDIEIPGKNSPRFGMLSLSENERIGGSELSAIINEAKSRKLELVIAIADSETSVTYYKVRRVDLPKSEYEYYEIDWMQPLEHHHHHH
+        #      - name: mask
+        #        value: -++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------
+        #      - name: nsteps
+        #        value: "{{inputs.parameters.nsteps}}"
+        - - name: 4mbs
+            template: main
+            arguments:
+              parameters:
+              - name: pdb
+                value: 4mbs
+              - name: primary
+                value: GAPDYQVSSPIYDINYYTSEPCQKINVKQIAARLLPPLYSLVFIFGFVGNMLVILILINYKRLKSMTDIYLLNLAISDLFFLLTVPFWAHYAAAQWDFGNTMCQLLTGLYFIGFFSGIFFIILLTIDRYLAVVHAVFALKARTVTFGVVTSVITWVVAVFASLPNIIFTRSQKEGLHYTCSSHFPYSQYQFWKNFQTLKIVILGLVLPLLVMVICYSGILKTLLRMKKYTCTVCGYIYNPEDGDPDNGVNPGTDFKDIPDDWVCPLCGVGKDQFEEVEEEKKRHRDVRLIFTIMIVYFLFWAPYNIVLLLNTFQEFFGLNNCSSSNRLDQAMQVTETLGMTHCCINPIIYAFVGEEFRNYLLVFFQKHIAKRFCKCCSIFQQEAPERASSVYTRSTGEQEISVGLGRPLEVLFQ
+              - name: mask
+                value: --------------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------------------------------------------------
+              - name: nsteps
+                value: "{{inputs.parameters.nsteps}}"
     - name: main
       inputs:
         parameters:
           - name: pdb
           - name: model
+            value: 1
           - name: chain
-          - name: frames
+            value: A
+          - name: nsteps
+          - name: primary
+          - name: mask
       steps:
         - - name: simulate
             template: simulate
@@ -40,6 +221,10 @@ spec:
                   value: "{{inputs.parameters.model}}"
                 - name: chain
                   value: "{{inputs.parameters.chain}}"
+                - name: primary
+                  value: "{{inputs.parameters.primary}}"
+                - name: mask
+                  value: "{{inputs.parameters.mask}}"
                 - name: nsteps
                   value: "{{inputs.parameters.nsteps}}"
         - - name: encode-video
@@ -59,7 +244,11 @@ spec:
         parameters:
           - name: pdb
           - name: model
+            value: 1
           - name: chain
+            value: A
+          - name: primary
+          - name: mask
           - name: nsteps
       container:
         imagePullPolicy: Always
@@ -67,7 +256,7 @@ spec:
         args: ["-run", "TestCreateVideo"]
         resources:
           limits:
-            memory: "4096Mi"
+            memory: "5Gi"
             cpu: "2000m"
         volumeMounts:
           - name: data
@@ -88,9 +277,9 @@ spec:
           - name: CHAIN_ID
             value: "{{inputs.parameters.chain}}"
           - name: PRIMARY
-            value: "AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA"
+            value: "{{inputs.parameters.primary}}"
           - name: MASK
-            value: "-+++++++++++++++++++++++++++++++-"
+            value: "{{inputs.parameters.mask}}"
 
     - name: encode-video
       inputs:

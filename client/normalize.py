@@ -7,11 +7,11 @@ def get_atoms_from_desc(residue: Residue, description: list):
     atoms = []
     for i, (element, id) in enumerate(description):
         if not id in residue.child_dict:
-            raise ValueError('atom "{}" not found'.format(id))
+            raise ValueError('atom "{}" not found in residue {}<{}>'.format(id, residue.resname, residue.id))
         atom = residue.child_dict[id]
         if atom.element != element:
             raise ValueError(
-                'expected element "{}" from atom {}, got element "{}"'.format(element, i, atom.element))
+                'expected element "{}" from atom {}, got element "{}" in residue {}<{}>'.format(element, i, atom.element, residue.resname, residue.id))
         atoms.append(atom)
     return atoms
 
