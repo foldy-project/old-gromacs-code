@@ -3,19 +3,35 @@ set -euo pipefail
 image=thavlik/foldy
 tag=latest
 docker build -t $image:$tag .
+
+pdb_id=4a5u
+model_id=1
+chain_id=A
+primary=MHHHHHHGSSQLLPAPLTNDPTAIGPVLPFEELHPRRYPENTATFLTRLRSLPSNHLPQPTLNCLLSAVSDQTKVSEEHLWESLQTILPDSQLSNEETNTLGLSTEHLTALAHLYNFQATVYSDRGPILFGPSDTIKRIDITHTTGPPSHFSPGKRLLGS
+mask=------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#--pdb_id 4jrn \
+#--model_id 1 \
+#--chain_id A \
+#--primary GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE \
+#--mask '----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------' \
+
 docker run \
     -v C:/Users/tlhavlik/.aws:/root/.aws \
+    -v D:/casp11:/data \
     -it \
     --name foldy \
     --rm \
+    -e PROTEINNET_PATH=/data \
     $image:$tag \
-    python3 ./simulate.py \
-        --no_report \
-        --pdb_id 4jrn \
-        --model_id 1 \
-        --chain_id A \
-        --correlation_id 0 \
-        --primary GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE \
-        --mask '----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------' \
-        --nsteps 10
+    python3 normalize.py
+    #python3 ./simulate.py \
+    #    --no_report \
+    #    --correlation_id 0 \
+    #    --pdb_id $pdb_id \
+    #    --model_id $model_id \
+    #    --chain_id $chain_id \
+    #    --primary $primary \
+    #    --mask $mask \
+    #    --nsteps 10
         

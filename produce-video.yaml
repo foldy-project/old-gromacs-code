@@ -163,18 +163,18 @@ spec:
         #        value: -++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-----
         #      - name: nsteps
         #        value: "{{inputs.parameters.nsteps}}"
-        #- - name: 4a5u
-        #    template: main
-        #    arguments:
-        #      parameters:
-        #      - name: pdb
-        #        value: 4a5u
-        #      - name: primary
-        #        value: MHHHHHHGSSQLLPAPLTNDPTAIGPVLPFEELHPRRYPENTATFLTRLRSLPSNHLPQPTLNCLLSAVSDQTKVSEEHLWESLQTILPDSQLSNEETNTLGLSTEHLTALAHLYNFQATVYSDRGPILFGPSDTIKRIDITHTTGPPSHFSPGKRLLGS
-        #      - name: mask
-        #        value: ------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        #      - name: nsteps
-        #        value: "{{inputs.parameters.nsteps}}"
+        - - name: 4a5u
+            template: main
+            arguments:
+              parameters:
+              - name: pdb
+                value: 4a5u
+              - name: primary
+                value: MHHHHHHGSSQLLPAPLTNDPTAIGPVLPFEELHPRRYPENTATFLTRLRSLPSNHLPQPTLNCLLSAVSDQTKVSEEHLWESLQTILPDSQLSNEETNTLGLSTEHLTALAHLYNFQATVYSDRGPILFGPSDTIKRIDITHTTGPPSHFSPGKRLLGS
+              - name: mask
+                value: ------------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+              - name: nsteps
+                value: "{{inputs.parameters.nsteps}}"
         #- - name: 4fz2
         #    template: main
         #    arguments:

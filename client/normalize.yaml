@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foldy-normalize
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app: foldy-normalize
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+              claimName: foldy-data
+        - name: aws-cred
+          secret:
+            secretName: aws-cred
+      containers:
+      - name: foldy-client
+        imagePullPolicy: Always
+        image: thavlik/foldy-client:latest
+        command: [bash, -c, python3 normalize.py -o /data/normalized.txt]
+        resources:
+          limits:
+            memory: "4Gi"
+            cpu: "3000m"
+        volumeMounts:
+          - name: data
+            mountPath: /data
+          - name: aws-cred
+            mountPath: /root/.aws
+        env:
+          - name: PROTEINNET_PATH
+            value: /data/casp11

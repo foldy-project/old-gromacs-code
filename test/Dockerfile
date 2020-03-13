@@ -28,11 +28,15 @@ RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
 WORKDIR /go/src/github.com/thavlik
 RUN git clone git@github.com:thavlik/foldy-operator.git
 
-# remove private credentials
-RUN rm /root/.ssh/id_rsa
-
 WORKDIR /app
 COPY entrypoint.sh .
 COPY suite_test.go .
 
+WORKDIR /go/src/github.com/thavlik/foldy-operator/proteinnet
+RUN git pull
+
+# remove private credentials
+RUN rm /root/.ssh/id_rsa
+
+WORKDIR /app
 ENTRYPOINT [ "./entrypoint.sh" ]

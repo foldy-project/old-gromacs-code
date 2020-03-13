@@ -1,0 +1,7 @@
+To run...
+
+./parser_v3.py <PDB file>
+
+The output files will be:
+
+new_<PDB code>-<segid>-<type>.pdb

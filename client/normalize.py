@@ -1,13 +1,42 @@
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Chain import Chain
 from Bio.PDB.Atom import Atom
+from Bio.PDB.Structure import Structure
+from Bio.PDB.Model import Model
+from Bio.PDB.PDBParser import PDBParser
+from Bio.PDB.PDBExceptions import PDBConstructionWarning
+from Bio.PDB import PDBIO
+import warnings
+from absl import app, flags
+import subprocess
+
+
+def get_unpacked_list(self):
+    """
+    Returns all atoms from the residue, in case of disordered,
+    keep only first alt loc and remove the alt-loc tag
+    Source: https://github.com/biopython/biopython/issues/455#issuecomment-291501909
+    """
+    atom_list = self.get_list()
+    undisordered_atom_list = []
+    for atom in atom_list:
+        if atom.is_disordered():
+            atom.altloc = " "
+            undisordered_atom_list.append(atom)
+        else:
+            undisordered_atom_list.append(atom)
+    return undisordered_atom_list
+
+
+Residue.get_unpacked_list = get_unpacked_list
 
 
 def get_atoms_from_desc(residue: Residue, description: list):
     atoms = []
     for i, (element, id) in enumerate(description):
         if not id in residue.child_dict:
-            raise ValueError('atom "{}" not found in residue {}<{}>'.format(id, residue.resname, residue.id))
+            raise ValueError('atom "{}" not found in residue {}<{}>'.format(
+                id, residue.resname, residue.id))
         atom = residue.child_dict[id]
         if atom.element != element:
             raise ValueError(
@@ -18,10 +47,7 @@ def get_atoms_from_desc(residue: Residue, description: list):
 
 class NormalizedResidue:
     def __init__(self, residue: Residue, description: list):
-        self.residue = Residue(residue.id, residue.resname, residue.segid)
-        atoms = get_atoms_from_desc(residue, description)
-        for atom in atoms:
-            self.residue.add(atom.copy())
+        self.residue = residue.copy()
 
 
 class Ala(NormalizedResidue):
@@ -198,7 +224,6 @@ _classes = {
     'VAL': Val,
     'SER': Ser,
     'HIS': His,
-    # 'NH2': NH2,
     'GLU': Glu,
     'GLN': Gln,
     'ASN': Asn,
@@ -218,7 +243,9 @@ _classes = {
 
 class UnknownResidueError(ValueError):
     def __init__(self, resname: str):
-        super(UnknownResidueError, self).__init__('unknown resname "{}"'.format(resname))
+        super(UnknownResidueError, self).__init__(
+            'unknown resname "{}"'.format(resname))
+
 
 def get_residue_class(resname: str) -> object:
     if not resname in _classes:
@@ -232,22 +259,250 @@ def normalize_residue(residue: Residue) -> Residue:
     return obj.residue
 
 
-def normalize_chain(chain: Chain, ignore_residues: set) -> Chain:
+def normalize_chain(chain: Chain) -> Chain:
     new_chain = Chain(chain.id)
     for residue in chain:
-        if residue.resname in ignore_residues:
-            continue
         try:
             new_chain.add(normalize_residue(residue))
         except UnknownResidueError:
-            print('Ignoring residue {}'.format(residue.resname))
+            pass
     return new_chain
 
 
+_resname_abbrev = {
+    'PRO': 'P',
+    'MET': 'M',
+    'ASP': 'D',
+    'VAL': 'V',
+    'SER': 'S',
+    'HIS': 'H',
+    'GLU': 'E',
+    'GLN': 'Q',
+    'ASN': 'N',
+    'GLY': 'G',
+    'ILE': 'I',
+    'LYS': 'K',
+    'TRP': 'W',
+    'TYR': 'Y',
+    'THR': 'T',
+    'ARG': 'R',
+    'PHE': 'F',
+    'CYS': 'C',
+    'LEU': 'L',
+    'ALA': 'A',
+}
+
+
+class UnknownResnameError(ValueError):
+    def __init__(self, resname: str):
+        super(UnknownResnameError, self).__init__(
+            'unknown resname "{}"'.format(resname))
+
+
+def resname_to_abbrev(resname: str) -> str:
+    if not resname in _resname_abbrev:
+        raise UnknownResnameError(resname)
+    return _resname_abbrev[resname]
+
+
+def normalize_structure_charmming(input_path: str,
+                                  pdb_id: str,
+                                  model_id: int,
+                                  chain_id: str,
+                                  primary: str,
+                                  mask: str,
+                                  save=True,
+                                  verbose=True):
+    proc = subprocess.run(['./normalize.sh', pdb_id, input_path], capture_output=True)
+    if proc.returncode != 0:
+        msg = 'expected exit code 0 from charmming_parser, got exit code {}: {}'.format(
+            proc.returncode, proc.stdout.decode('unicode_escape'))
+        if proc.stderr:
+            msg += ' ' + proc.stderr.decode('unicode_escape')
+        raise ValueError(msg)
+
+    if save:
+        out_path = input_path + '.norm'
+        io = PDBIO()
+        io.set_structure(new_structure)
+        io.save(out_path)
+        return out_path
+    else:
+        return new_structure
+
+def normalize_structure(input_path: str,
+                        pdb_id: str,
+                        model_id: int,
+                        chain_id: str,
+                        primary: str,
+                        mask: str,
+                        save=True,
+                        verbose=True):
+    assert primary
+    assert mask
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("ignore", PDBConstructionWarning)
+        parser = PDBParser()
+        structure = parser.get_structure(pdb_id, input_path)
+        if not model_id in structure.child_dict:
+            try_model_id = model_id-1
+            model = None
+            while try_model_id >= 0:
+                if try_model_id in structure.child_dict:
+                    model = structure.child_dict[try_model_id]
+                    if verbose:
+                        print('Supposing model {} is {}...'.format(
+                            model_id-1, model_id))
+                try_model_id -= 1
+            if not model:
+                raise ValueError(
+                    'model "{}" not found in "{}", options are {}'.format(model_id, pdb_id, list(structure.child_dict.keys())))
+        else:
+            model = structure.child_dict[model_id]
+        if not chain_id in model.child_dict:
+            raise ValueError(
+                'chain "{}" not found in "{}" model "{}", options are {}'.format(chain_id, pdb_id, model_id, list(model.child_dict.keys())))
+        chain = model.child_dict[chain_id]
+
+        new_chain = normalize_chain(chain)
+
+        raw = []
+        for residue in chain:
+            try:
+                raw.append(resname_to_abbrev(residue.resname))
+            except UnknownResnameError:
+                if verbose:
+                    print('Skipping residue "{}"'.format(residue.resname))
+                pass
+        raw = ''.join(raw)
+
+        # verify that the sequence is what we expect
+        normalized = []
+        for residue in new_chain:
+            try:
+                normalized.append(resname_to_abbrev(residue.resname))
+            except UnknownResnameError:
+                if verbose:
+                    print('Skipping residue "{}"'.format(residue.resname))
+                pass
+        normalized = ''.join(normalized)
+
+        # extract the known primary sequence using the mask
+        masked_primary = []
+        for r, m in zip(primary, mask):
+            if m == '-':
+                continue
+            assert m == '+'
+            masked_primary.append(r)
+        masked_primary = ''.join(masked_primary)
+
+        # ensure the sequence lengths match
+        if len(normalized) != len(masked_primary):
+            #print('Error normalizing {}'.format(pdb_id))
+            # print('raw')
+            # print(raw)
+            # print('normalized')
+            # print(normalized)
+            # print('masked_primary')
+            # print(masked_primary)
+            # print('primary')
+            # print(primary)
+            # print('mask')
+            # print(mask)
+            raise ValueError('length of normalized chain ({}) not match supplied primary sequence ({})'.format(
+                len(normalized), len(masked_primary)))
+        # ensure residue identities match
+        for i, (got, expected) in enumerate(zip(normalized, masked_primary)):
+            if got != expected:
+                raise ValueError(
+                    'mismatch residue at position {} (got {}, expected {})'.format(i, got, expected))
+
+        new_model = Model(model.id)
+        new_model.add(new_chain)
+        new_structure = Structure(structure.id)
+        new_structure.add(new_model)
+
+        if save:
+            out_path = input_path + '.norm'
+            io = PDBIO()
+            io.set_structure(new_structure)
+            io.save(out_path)
+            return out_path
+        else:
+            return new_structure
+
+
+def main(_argv):
+    FLAGS = flags.FLAGS
+    import subprocess
+    import os
+    import boto3
+    import botocore
+    import sys
+    from Bio.PDB import PDBList
+    from simulate import PDBNotFoundException, prepare_input_data, run_simulation
+    from proteinnet import read_record
+
+    input_path = os.getenv('PROTEINNET_PATH')
+    if not input_path:
+        raise ValueError('missing PROTEINNET_PATH environment variable')
+    input_path = os.path.join(input_path, 'training_30')
+    print('Reading data from {}'.format(input_path))
+    success = 0
+    total = 0
+
+    if FLAGS.output:
+        print('Saving output to {}'.format(FLAGS.output))
+        output = open(FLAGS.output, 'w')
+    else:
+        print('Warning: not saving output')
+        output = None
+
+    try:
+        with open(input_path, 'r') as input_file:
+            while True:
+                sys.stdout.flush()
+                record = read_record(input_file, 20)
+                if record is not None:
+                    id = record["id"]
+                    primary = record['primary']
+                    mask = record['mask']
+                    primary_len = len(primary)
+                    assert primary_len == len(mask)
+                    parts = id.split('_')
+                    if len(parts) != 3:
+                        # https://github.com/aqlaboratory/proteinnet/issues/1#issuecomment-375270286
+                        continue
+                    pdb_id = parts[0].lower()
+                    model_id = int(parts[1])
+                    chain_id = parts[2]
+                    try:
+                        total += 1
+                        structure_paths = run_simulation(pdb_id=pdb_id,
+                                                         model_id=model_id,
+                                                         chain_id=chain_id,
+                                                         primary=primary,
+                                                         mask=mask,
+                                                         emtol=FLAGS.emtol,
+                                                         emstep=FLAGS.emstep,
+                                                         nsteps=10,
+                                                         dt=FLAGS.dt,
+                                                         seed=FLAGS.seed)
+                        [os.unlink(path) for path in structure_paths]
+                        success += 1
+                        success_rate = success / total
+                        print('Normalized {} ({}% success)'.format(
+                            pdb_id, success_rate*100))
+                        good.write('{},{},{},{},{}\n'.format(
+                            pdb_id, model_id, chain_id, primary, mask))
+                        good.flush()()
+                    except:
+                        _, value, _ = sys.exc_info()
+                        print('Error normalizing {}: {}'.format(pdb_id, value))
+    finally:
+        output.close()
+
+
 if __name__ == '__main__':
-    from simulate import normalize_structure
-    ignore_residues = set([
-        'HOH',
-    ])
-    normalize_structure('pdb1aki.ent', pdb_id='1aki', model_id=0,
-                        chain_id='A', ignore_residues=ignore_residues)
+    flags.DEFINE_string("output", None, 'output file path', short_name='o')
+    app.run(main)

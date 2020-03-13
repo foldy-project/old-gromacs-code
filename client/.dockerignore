@@ -1,4 +1,4 @@
 __pycache__/
-./build.sh
-./Dockerfile
-./local-test
+build.sh
+Dockerfile
+local-test

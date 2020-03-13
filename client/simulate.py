@@ -12,7 +12,6 @@ import http.client
 import json
 import shutil
 import subprocess
-from subprocess import PIPE
 from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 from Bio.PDB import PDBIO
@@ -21,7 +20,7 @@ from Bio.PDB.Model import Model
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Chain import Chain
 from Bio.PDB.Atom import Atom
-from normalize import normalize_chain
+from normalize import normalize_structure, normalize_structure_charmming
 
 script_dir = os.path.dirname(sys.argv[0])
 
@@ -77,117 +76,15 @@ def report_error(msg: str):
             response.code))
 
 
-_resname_abbrev = {
-    'PRO': 'P',
-    'MET': 'M',
-    'ASP': 'D',
-    'VAL': 'V',
-    'SER': 'S',
-    'HIS': 'H',
-    'GLU': 'E',
-    'GLN': 'Q',
-    'ASN': 'N',
-    'GLY': 'G',
-    'ILE': 'I',
-    'LYS': 'K',
-    'TRP': 'W',
-    'TYR': 'Y',
-    'THR': 'T',
-    'ARG': 'R',
-    'PHE': 'F',
-    'CYS': 'C',
-    'LEU': 'L',
-    'ALA': 'A',
-}
-
-
-class UnknownResnameError(ValueError):
-    def __init__(self, resname: str):
-        super(UnknownResnameError, self).__init__('unknown resname "{}"'.format(resname))
-
-def resname_to_abbrev(resname: str) -> str:
-    if not resname in _resname_abbrev:
-        raise UnknownResnameError(resname)
-    return _resname_abbrev[resname]
-
-
-def normalize_structure(input_path: str,
-                        pdb_id: str,
-                        model_id: int,
-                        chain_id: str,
-                        ignore_residues: set,
-                        primary=None,
-                        mask=None):
-    with warnings.catch_warnings(record=True):
-        warnings.simplefilter("ignore", PDBConstructionWarning)
-        parser = PDBParser()
-        structure = parser.get_structure(pdb_id, input_path)
-        if not model_id in structure.child_dict:
-            if primary and model_id-1 in structure.child_dict:
-                # later on we'll ensure primary sequence is correct
-                model = structure.child_dict[model_id-1]
-                print('Supposing model {} is {}...'.format(model_id-1, model_id))
-            else:
-                raise ValueError(
-                    'model "{}" not found in "{}", options are {}'.format(model_id, pdb_id, list(structure.child_dict.keys())))
-        else:
-            model = structure.child_dict[model_id]
-        if not chain_id in model.child_dict:
-            raise ValueError(
-                'chain "{}" not found in "{}" model "{}", options are {}'.format(chain_id, pdb_id, model_id, list(model.child_dict.keys())))
-        chain = model.child_dict[chain_id]
-
-        new_chain = normalize_chain(chain,
-                                    ignore_residues=ignore_residues)
-
-        if primary:
-            assert mask
-
-            # verify that the sequence is what we expect
-            abbrev = []
-            for residue in new_chain:
-                try:
-                    abbrev.append(resname_to_abbrev(residue.resname))
-                except UnknownResnameError:
-                    print('Skipping residue "{}"'.format(residue.resname))
-                    pass
-            
-            # extract the known primary sequence using the mask
-            known_primary = []
-            for r, m in zip(primary, mask):
-                if m != '+':
-                    continue
-                known_primary.append(r)
-
-            # ensure the sequence lengths match
-            if len(abbrev) != len(known_primary):
-                raise ValueError('length of normalized chain ({} residues, {}) not match supplied primary sequence ({} residues, {})'.format(
-                    len(abbrev), abbrev, len(known_primary), known_primary))
-            # ensure residue identities match
-            for i, (got, expected) in enumerate(zip(abbrev, known_primary)):
-                if got != expected:
-                    raise ValueError('mismatch residue at position {} (got {}, expected {})'.format(i, got, expected))
-
-        new_model = Model(model.id)
-        new_model.add(new_chain)
-        new_structure = Structure(structure.id)
-        new_structure.add(new_model)
-
-        out_path = input_path + '.norm'
-        io = PDBIO()
-        io.set_structure(new_structure)
-        io.save(out_path)
-        print('Normalized {} to {}'.format(pdb_id, out_path))
-        return out_path
-
 tmpdir = '/tmp'
+
 
 def prepare_input_data(pdb_id: str,
                        model_id: str,
                        chain_id: str,
-                       ignore_residues: set,
-                       primary=None,
-                       mask=None) -> str:
+                       primary: str,
+                       mask: str,
+                       verbose=False) -> str:
     s3 = boto3.resource('s3',
                         region_name=FLAGS.region,
                         endpoint_url=FLAGS.endpoint)
@@ -203,27 +100,41 @@ def prepare_input_data(pdb_id: str,
             raise PDBNotFoundException(pdb_id)
         raise
     run_cmd(['gzip', '-df', path])
-    return normalize_structure(os.path.join(tmpdir, 'pdb{}.ent'.format(pdb_id)),
-                               pdb_id=pdb_id,
-                               model_id=model_id,
-                               chain_id=chain_id,
-                               ignore_residues=ignore_residues,
-                               primary=primary,
-                               mask=mask)
+    pdb_path = os.path.join(tmpdir, 'pdb{}.ent'.format(pdb_id))
+    try:
+        return normalize_structure_charmming(pdb_path,
+                                             pdb_id=pdb_id,
+                                             model_id=model_id,
+                                             chain_id=chain_id,
+                                             primary=primary,
+                                             mask=mask,
+                                             save=True,
+                                             verbose=verbose)
+    finally:
+        os.unlink(pdb_path)
 
 
 def run_cmd(args, expect_exitcode=0):
-    proc = subprocess.run(args, stdout=PIPE, stderr=PIPE)
+    proc = subprocess.run(args, capture_output=True)
     if expect_exitcode != None and proc.returncode != expect_exitcode:
         msg = 'expected exit code {} from `{}`, got exit code {}: {}'.format(
-            expect_exitcode, args, proc.returncode, str(proc.stdout))
+            expect_exitcode, args, proc.returncode, proc.stdout.decode('unicode_escape'))
         if proc.stderr:
-            msg += ' ' + str(proc.stderr)
+            msg += ' ' + proc.stderr.decode('unicode_escape')
         raise ValueError(msg)
 
 
+def cleanup(startswith: str):
+    for file in os.listdir('.'):
+        if file.startswith(startswith):
+            os.unlink(file)
+
+
 def run_simulation(pdb_id: str,
-                   input_pdb: str,
+                   model_id: int,
+                   chain_id: str,
+                   primary: str,
+                   mask: str,
                    emtol: float,
                    emstep: float,
                    nsteps: int,
@@ -235,38 +146,61 @@ def run_simulation(pdb_id: str,
     # This needs investigating, but for now I don't
     # really care about wasting a bit of compute.
     nsteps *= 5
-
-    run_cmd([
-        './run-simulation.sh',
-        pdb_id,
-        input_pdb,
-        str(emtol),
-        str(emstep),
-        str(nsteps),
-        str(dt),
-        str(seed),
-    ])
-    return 0
-
-
-def trjconv(pdb_id: str, nsteps: int) -> List[str]:
-    structure_paths = []
-    for i in range(nsteps):
-        proc = subprocess.run(
-            ['./trjconv.sh', pdb_id,
-                str(i), str(i)],
-            stdout=PIPE,
-            stderr=PIPE)
+    try:
+        input_pdb = prepare_input_data(pdb_id=pdb_id,
+                                       model_id=model_id,
+                                       chain_id=chain_id,
+                                       primary=primary,
+                                       mask=mask)
+        proc = subprocess.run([
+            './run-simulation.sh',
+            input_pdb,
+            str(emtol),
+            str(emstep),
+            str(nsteps),
+            str(dt),
+            str(seed),
+        ], capture_output=True)
         if proc.returncode != 0:
-            print('trjconv {}'.format(i))
-            print(str(proc.stdout))
-            print(str(proc.stderr))
-            raise ValueError('error converting frame #{}: {} {}'.format(
-                i, str(proc.stdout), str(proc.stderr)))
-        path = '{}_minim_{}.pdb'.format(pdb_id, i)
-        assert os.path.isfile(path)
-        structure_paths.append(path)
+            # print(proc.stdout.decode('unicode_escape'))
+            print(proc.stderr.decode('unicode_escape'))
+            raise ValueError('simulation exit code {}'.format(proc.returncode))
+        # go ahead and free simulation resources early
+        cleanup('tmp_')
+        # convert frames
+        return trjconv(input_xtc='out_traj.xtc',
+                       input_tpr='out_em.tpr',
+                       nsteps=FLAGS.nsteps)
+    finally:
+        cleanup('tmp_')
+        cleanup('out_')
+
+
+def trjconv(input_xtc: str,
+            input_tpr: str,
+            nsteps: int) -> List[str]:
+    structure_paths = []
+    try:
+        for i in range(nsteps):
+            proc = subprocess.run(['./trjconv.sh',
+                                   input_xtc,
+                                   input_tpr,
+                                   str(i),
+                                   ],
+                                  capture_output=True)
+            if proc.returncode != 0:
+                #print('trjconv {}'.format(i))
+                # print(proc.stdout.decode('unicode_escape'))
+                print(proc.stderr.decode('unicode_escape'))
+                raise ValueError('error converting frame {}'.format(i))
+            path = '{}.pdb'.format(i)
+            assert os.path.isfile(path)
+            structure_paths.append(path)
+    except:
+        [os.unlink(path) for path in structure_paths]
+        raise
     return structure_paths
+
 
 def upload(pdb_id: str, correlation_id: str):
     run_cmd(['./upload.sh', pdb_id, correlation_id])
@@ -300,11 +234,6 @@ def calc_deltas(pdb_id: str, structures: List[str]):
 
 
 def main(_argv):
-    ignore_residues = set([
-        'HOH',
-        'ANP',
-        ' MG',
-    ])
     try:
         if not FLAGS.pdb_id:
             raise ValueError('missing pdb_id')
@@ -318,19 +247,17 @@ def main(_argv):
         input_pdb = prepare_input_data(pdb_id=pdb_id,
                                        model_id=FLAGS.model_id,
                                        chain_id=FLAGS.chain_id,
-                                       ignore_residues=ignore_residues,
                                        primary=FLAGS.primary,
                                        mask=FLAGS.mask)
         print('Running simulation...')
-        run_simulation(pdb_id=pdb_id,
-                       input_pdb=input_pdb,
-                       emtol=FLAGS.emtol,
-                       emstep=FLAGS.emstep,
-                       nsteps=FLAGS.nsteps,
-                       dt=FLAGS.dt,
-                       seed=FLAGS.seed)
+        # structure_paths = run_simulation(pdb_id=pdb_id,
+        #                                 input_pdb=input_pdb,
+        #                                 emtol=FLAGS.emtol,
+        #                                 emstep=FLAGS.emstep,
+        #                                 nsteps=FLAGS.nsteps,
+        #                                 dt=FLAGS.dt,
+        #                                 seed=FLAGS.seed)
         print('Extracting frames...')
-        structure_paths = trjconv(pdb_id, FLAGS.nsteps)
         calc_deltas(pdb_id, structure_paths)
         if not FLAGS.no_report:
             print('Uploading results...')
