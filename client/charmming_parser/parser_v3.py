@@ -36,8 +36,11 @@
 # (12 ) To STDOUT
 """
 
-import sys,string,pickle as cPickle
-import lib.Atom as Atom, lib.Etc as Etc
+import sys
+import string
+import pickle as cPickle
+import Atom
+import Etc
 
 # User defined options
 in_ver='auto'       # 'auto' or 'web' or 'charmm'
@@ -49,7 +52,7 @@ assert len(pdb_name) == 4
 warnings=[]
 
 # TODO optparse!
-for opt_arg in sys.argv[1:-1]:
+for opt_arg in sys.argv[2:-1]:
     if opt_arg.startswith('out_ver'): out_ver = opt_arg.split('=')[1]
     elif opt_arg.startswith('in_ver'): in_ver = opt_arg.split('=')[1]
     else: raise TacoError

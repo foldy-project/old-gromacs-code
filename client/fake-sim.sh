@@ -2,13 +2,14 @@
 set -euo pipefail
 cd $(dirname "$0")
 input_path=$1
-export emstep=$2
-export nsteps=$3
-export dt=$4
-export seed=$5
+export emstep=0.01
+export nsteps=10000
+export dt=0.0002
+export seed=-1
 
 # generate mdp
 envsubst < minim-modified.mdp.tpl > "tmp_minim-modified.mdp"
+cat "tmp_minim-modified.mdp"
 
 grep -v HOH $input_path > "tmp_clean.pdb"
 gmx pdb2gmx -ignh -f "tmp_clean.pdb" -o "tmp_processed.gro" -p "tmp_topol.top" -water spce -ff amber03
@@ -21,4 +22,3 @@ echo "Running simulation..."
 gmx mdrun -v -deffnm em -x "out_traj.xtc" -s "out_em.tpr"
 echo "Simulation complete"
 du --block-size=M -a | grep out_traj.xtc
-rm \#* # Clean up backup data

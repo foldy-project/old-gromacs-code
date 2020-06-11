@@ -13,7 +13,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-              claimName: foldy-data
+              claimName: foldy-big-data
         - name: aws-cred
           secret:
             secretName: aws-cred
@@ -21,11 +21,11 @@ spec:
       - name: foldy-client
         imagePullPolicy: Always
         image: thavlik/foldy-client:latest
-        command: [bash, -c, python3 normalize.py -o /data/normalized.txt]
+        command: [bash, -c, python3 normalize.py -o /data/normalized2.txt]
         resources:
           limits:
-            memory: "4Gi"
-            cpu: "3000m"
+            memory: "2Gi"
+            cpu: "1000m"
         volumeMounts:
           - name: data
             mountPath: /data

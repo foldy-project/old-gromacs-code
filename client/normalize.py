@@ -9,6 +9,9 @@ from Bio.PDB import PDBIO
 import warnings
 from absl import app, flags
 import subprocess
+from util import cleanup
+import os
+from errors import ChainLengthError
 
 
 def get_unpacked_list(self):
@@ -48,6 +51,9 @@ def get_atoms_from_desc(residue: Residue, description: list):
 class NormalizedResidue:
     def __init__(self, residue: Residue, description: list):
         self.residue = residue.copy()
+        #self.residue = Residue(residue.id, residue.resname, residue.segid)
+        # [self.residue.add(atom)
+        # for atom in get_atoms_from_desc(residue, description)]
 
 
 class Ala(NormalizedResidue):
@@ -313,22 +319,46 @@ def normalize_structure_charmming(input_path: str,
                                   mask: str,
                                   save=True,
                                   verbose=True):
-    proc = subprocess.run(['./normalize.sh', pdb_id, input_path], capture_output=True)
-    if proc.returncode != 0:
-        msg = 'expected exit code 0 from charmming_parser, got exit code {}: {}'.format(
-            proc.returncode, proc.stdout.decode('unicode_escape'))
-        if proc.stderr:
-            msg += ' ' + proc.stderr.decode('unicode_escape')
-        raise ValueError(msg)
+    try:
+        proc = subprocess.run(
+            ['./normalize.sh', pdb_id, input_path], capture_output=True)
+        print(proc.stdout.decode('unicode_escape'))
+        if proc.returncode != 0:
+            msg = 'expected exit code 0 from charmming_parser, got exit code {}: {}'.format(
+                proc.returncode, proc.stdout.decode('unicode_escape'))
+            if proc.stderr:
+                msg += ' ' + proc.stderr.decode('unicode_escape')
+            raise ValueError(msg)
+        files = [file for file in os.listdir('.')
+                 if file.startswith('new_') and f'-{chain_id.lower()}-' in file and '-pro' in file]
+        print(files)
+        structure_path = f'{pdb_id}_{model_id}_{chain_id}.pdb'
+        os.rename(files[0], structure_path)
+        if save:
+            return structure_path
+        else:
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("ignore", PDBConstructionWarning)
+                return PDBParser().get_structure(pdb_id, structure_path)
+    except:
+        raise
+    finally:
+        cleanup('new_')
 
-    if save:
-        out_path = input_path + '.norm'
-        io = PDBIO()
-        io.set_structure(new_structure)
-        io.save(out_path)
-        return out_path
-    else:
-        return new_structure
+
+def print_chains(structure: Structure):
+    for model in structure:
+        print(f'{model.id}')
+        for chain in model:
+            raw = []
+            for residue in chain:
+                try:
+                    raw.append(resname_to_abbrev(residue.resname))
+                except UnknownResnameError:
+                    pass
+            raw = ''.join(raw)
+            print(f'\t{chain} {len(raw)} {raw}')
+
 
 def normalize_structure(input_path: str,
                         pdb_id: str,
@@ -371,8 +401,8 @@ def normalize_structure(input_path: str,
             try:
                 raw.append(resname_to_abbrev(residue.resname))
             except UnknownResnameError:
-                if verbose:
-                    print('Skipping residue "{}"'.format(residue.resname))
+                # if verbose:
+                #    print('Skipping residue "{}"'.format(residue.resname))
                 pass
         raw = ''.join(raw)
 
@@ -382,8 +412,8 @@ def normalize_structure(input_path: str,
             try:
                 normalized.append(resname_to_abbrev(residue.resname))
             except UnknownResnameError:
-                if verbose:
-                    print('Skipping residue "{}"'.format(residue.resname))
+                # if verbose:
+                #    print('Skipping residue "{}"'.format(residue.resname))
                 pass
         normalized = ''.join(normalized)
 
@@ -398,19 +428,8 @@ def normalize_structure(input_path: str,
 
         # ensure the sequence lengths match
         if len(normalized) != len(masked_primary):
-            #print('Error normalizing {}'.format(pdb_id))
-            # print('raw')
-            # print(raw)
-            # print('normalized')
-            # print(normalized)
-            # print('masked_primary')
-            # print(masked_primary)
-            # print('primary')
-            # print(primary)
-            # print('mask')
-            # print(mask)
-            raise ValueError('length of normalized chain ({}) not match supplied primary sequence ({})'.format(
-                len(normalized), len(masked_primary)))
+            raise ChainLengthError(len(normalized), len(masked_primary))
+
         # ensure residue identities match
         for i, (got, expected) in enumerate(zip(normalized, masked_primary)):
             if got != expected:
@@ -440,23 +459,62 @@ def main(_argv):
     import botocore
     import sys
     from Bio.PDB import PDBList
-    from simulate import PDBNotFoundException, prepare_input_data, run_simulation
+    from simulate import PDBNotFoundException, prepare_input_data, run_simulation, BadTopologyError, IncompleteRingError, SettleWaterError, UnknownSimulationError, GromacsError
     from proteinnet import read_record
+    import shutil
+
+    def log_error(category: str, pdb_id: str, stderr: str):
+        dir = f'/data/errors/{category}'
+        try:
+            os.mkdir(dir)
+        except FileExistsError:
+            pass
+        with open(f'{dir}/{pdb_id}.txt', 'w') as f:
+            f.write(stderr)
+            
+    #pdb_id = '2l0e'
+    #model_id = 1
+    #chain_id = 'A'
+    #primary = 'AKKKDNLLFGSIISAVDPVAVLAVFEEIHKKKA'
+    #mask = '-+++++++++++++++++++++++++++++++-'
+    # try:
+    #    structure_paths = run_simulation(pdb_id=pdb_id,
+    #                                     model_id=model_id,
+    #                                     chain_id=chain_id,
+    #                                     primary=primary,
+    #                                     mask=mask,
+    #                                     emstep=FLAGS.emstep,
+    #                                     nsteps=5,
+    #                                     dt=FLAGS.dt,
+    #                                     seed=FLAGS.seed)
+    #    [os.unlink(path) for path in structure_paths]
+    #    print('Normalized {}'.format(pdb_id))
+    # except:
+    #    _, value, _ = sys.exc_info()
+    #    print('Error normalizing {}: {}'.format(pdb_id, value))
+    # sys.stdout.flush()
 
     input_path = os.getenv('PROTEINNET_PATH')
     if not input_path:
         raise ValueError('missing PROTEINNET_PATH environment variable')
-    input_path = os.path.join(input_path, 'training_30')
+    input_path = os.path.join(input_path, 'training_50')
     print('Reading data from {}'.format(input_path))
     success = 0
     total = 0
 
     if FLAGS.output:
         print('Saving output to {}'.format(FLAGS.output))
+        try:
+            os.remove(FLAGS.output)
+        except:
+            pass
         output = open(FLAGS.output, 'w')
     else:
         print('Warning: not saving output')
         output = None
+
+    shutil.rmtree('/data/errors', ignore_errors=True)
+    os.mkdir('/data/errors')
 
     try:
         with open(input_path, 'r') as input_file:
@@ -478,12 +536,12 @@ def main(_argv):
                     chain_id = parts[2]
                     try:
                         total += 1
+                        print(f'Normalizing {pdb_id}')
                         structure_paths = run_simulation(pdb_id=pdb_id,
                                                          model_id=model_id,
                                                          chain_id=chain_id,
                                                          primary=primary,
                                                          mask=mask,
-                                                         emtol=FLAGS.emtol,
                                                          emstep=FLAGS.emstep,
                                                          nsteps=10,
                                                          dt=FLAGS.dt,
@@ -491,16 +549,29 @@ def main(_argv):
                         [os.unlink(path) for path in structure_paths]
                         success += 1
                         success_rate = success / total
-                        print('Normalized {} ({}% success)'.format(
-                            pdb_id, success_rate*100))
-                        good.write('{},{},{},{},{}\n'.format(
-                            pdb_id, model_id, chain_id, primary, mask))
-                        good.flush()()
+                        print(f'Normalized {pdb_id} ({success_rate*100}% success)\n')
+                        if output:
+                            output.write('{},{},{},{},{}\n'.format(
+                                pdb_id, model_id, chain_id, primary, mask))
+                            output.flush()
+                    except ChainLengthError as e:
+                        print(f'Error normalizing {pdb_id}: {e}')
+                        log_error('chain_length', pdb_id, e.message)
+                    except GromacsError as e:
+                        print(f'Error normalizing {pdb_id}: {e}')
+                        log_error(e.category, pdb_id, e.stderr)
+                    except PDBNotFoundException as e:
+                        print(f'Error normalizing {pdb_id}: {e}')
+                        log_error('pdb_not_found', pdb_id, str(e))
+                    except KeyboardInterrupt:
+                        raise
                     except:
                         _, value, _ = sys.exc_info()
-                        print('Error normalizing {}: {}'.format(pdb_id, value))
+                        print(f'Encountered unhandled error while normalizing {pdb_id}: {type(value)} {value}')
+                        log_error('unhandled', pdb_id, str(value))
     finally:
-        output.close()
+        if output:
+            output.close()
 
 
 if __name__ == '__main__':

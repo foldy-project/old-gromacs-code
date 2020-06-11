@@ -15,16 +15,22 @@ mask=------------+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #--chain_id A \
 #--primary GAHMSELVFEKADSGCVIGKRILAHMQEQIGQPQALENSERLDRILTVAAWPPDVPKRFVSVTTGETRTLVRGAPLGSGGFATVYEATDVETNEELAVKVFMSEKEPTDETMLDLQRESSCYRNFSLAKTAKDAQESCRFMVPSDVVMLEGQPASTEVVIGLTTRWVPNYFLLMMRAEADMSKVISWVFGDASVNKSEFGLVVRMYLSSQAIKLVANVQAQGIVHTDIKPANFLLLKDGRLFLGDFGTYRINNSVGRAIGTPGYEPPERPFQATGITYTFPTDAWQLGITLYCIWCKERPTPADGIWDYLHFADCPSTPELVQDLIRSLLNRDPQKRMLPLQALETAAFKEMDSVVKGAAQNFEQQEHLHTE \
 #--mask '----++++++++++++++++++++++++-------++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--+++++++++++----++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------' \
+#    -v C:/Users/tlhavlik/Repositories/foldy/pdb:/data \
 
 docker run \
     -v C:/Users/tlhavlik/.aws:/root/.aws \
     -v D:/casp11:/data \
+    -e PROTEINNET_PATH=/data \
     -it \
     --name foldy \
     --rm \
-    -e PROTEINNET_PATH=/data \
     $image:$tag \
     python3 normalize.py
+
+    #./fake-sim.sh /data/1aki.pdb
+
+
+    #-v D:/casp11:/data \
     #python3 ./simulate.py \
     #    --no_report \
     #    --correlation_id 0 \

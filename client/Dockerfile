@@ -22,6 +22,9 @@ RUN pip install awscli \
     absl-py \
     biopython
 
+RUN python get-pip.py \
+    && python -m pip install numpy cloudpickle
+
 WORKDIR /app
 COPY charmming_parser charmming_parser
 COPY minim-modified.mdp.tpl .
@@ -30,6 +33,9 @@ COPY run-simulation.sh .
 COPY normalize.sh .
 COPY normalize.py .
 COPY simulate.py .
+COPY util.py .
 COPY proteinnet.py .
+COPY errors.py .
 COPY upload.sh .
 COPY trjconv.sh .
+COPY fake-sim.sh .
